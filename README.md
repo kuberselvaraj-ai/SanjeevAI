@@ -65,6 +65,17 @@ Then open http://localhost:3000.
 **China-platform keys:** if your key is from `platform.moonshot.cn`, open
 Settings → Advanced and change the Kimi base URL to `https://api.moonshot.cn/v1`.
 
+## Troubleshooting
+
+**`npm install` fails with `ENOTFOUND npm.mirrors.msh.team`** — your npm is pointed at a
+stale mirror. Fix:
+
+```bash
+npm config set registry https://registry.npmjs.org
+rm -rf node_modules package-lock.json
+npm install
+```
+
 ## Notes & limits
 
 - Conversations and settings are stored in the app's local storage on this Mac only.
