@@ -9,7 +9,7 @@ function createWindow() {
     height: 840,
     minWidth: 900,
     minHeight: 600,
-    title: 'Kimi Studio',
+    title: 'Sanjeev AI',
     backgroundColor: '#f5f0e1',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 14 },

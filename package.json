@@ -1,5 +1,5 @@
 {
-  "name": "kimi-studio",
+  "name": "sanjeev-ai",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -89,11 +89,11 @@
     "vite": "^7.2.4",
     "wait-on": "^9.1.0"
   },
-  "description": "Standalone Kimi (Moonshot AI) chat & video studio for Mac",
+  "description": "Sanjeev AI \u2014 a standalone Claude-style client for the Kimi (Moonshot AI) API, with video generation",
   "main": "electron/main.cjs",
   "build": {
-    "appId": "com.kimistudio.app",
-    "productName": "Kimi Studio",
+    "appId": "com.sanjeevai.app",
+    "productName": "Sanjeev AI",
     "directories": {
       "output": "release"
     },
@@ -110,7 +110,7 @@
       ]
     },
     "dmg": {
-      "title": "Kimi Studio"
+      "title": "Sanjeev AI"
     }
   }
 }

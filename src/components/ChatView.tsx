@@ -70,7 +70,7 @@ export function ChatView({
         {empty ? (
           <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center px-6 pb-16">
             <span className="font-display flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-2xl font-semibold text-primary-foreground shadow-md">
-              K
+              S
             </span>
             <h2 className="font-display mt-6 text-center text-3xl font-semibold tracking-tight md:text-4xl">
               How can I help you today?

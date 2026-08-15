@@ -1,4 +1,4 @@
-# Kimi Studio
+# Sanjeev AI
 
 A standalone, Claude-style desktop client for the Kimi (Moonshot AI) API — chat with
 **Kimi K3**, **Kimi Code (K2.7)**, **Kimi Code Highspeed**, and **Kimi K2.6**, plus a
@@ -38,7 +38,7 @@ that's it.
 npm run electron:dist:mac
 ```
 
-The installer lands in `release/` (e.g. `release/Kimi Studio-1.0.0.dmg`). The app is
+The installer lands in `release/` (e.g. `release/Sanjeev AI-1.0.0.dmg`). The app is
 unsigned, so on first launch: right-click the app → **Open** → **Open** (Gatekeeper).
 
 ## Alternative: run in a browser

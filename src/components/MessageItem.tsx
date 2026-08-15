@@ -167,7 +167,7 @@ export const MessageItem = memo(function MessageItem({
       <div className="mx-auto w-full max-w-3xl">
         <div className="mb-1.5 flex items-center gap-2">
           <span className="font-display flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-            K
+            S
           </span>
           <span className="text-xs font-medium text-muted-foreground">
             {modelLabel(message.model ?? '')}

@@ -46,10 +46,10 @@ export function Sidebar({
         <div className="flex items-center justify-between px-5 pb-2 pt-5">
           <div>
             <h1 className="font-display text-[22px] font-semibold leading-none tracking-tight">
-              Kimi Studio
+              Sanjeev AI
             </h1>
             <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-              Moonshot AI client
+              Powered by the Kimi API
             </p>
           </div>
           <button
