@@ -1,4 +1,13 @@
-import type { ChatMessage, Settings } from './types'
+import type { Settings } from './types'
+
+export type MessagePart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+export interface ApiMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string | MessagePart[]
+}
 
 export interface StreamCallbacks {
   onToken: (text: string) => void
@@ -15,7 +24,7 @@ export interface StreamCallbacks {
 export async function streamChat(
   settings: Settings,
   model: string,
-  messages: ChatMessage[],
+  messages: ApiMessage[],
   cb: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -31,7 +40,7 @@ export async function streamChat(
       },
       body: JSON.stringify({
         model,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages,
         temperature: settings.temperature,
         stream: true,
       }),

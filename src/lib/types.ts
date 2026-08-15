@@ -1,14 +1,31 @@
 export type Role = 'user' | 'assistant' | 'system'
 
+export interface Attachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  kind: 'image' | 'doc'
+  /** base64 data URL (images — sent inline to the vision model) */
+  dataUrl?: string
+  /** text extracted via the Kimi Files API (documents) */
+  extractedText?: string
+  status: 'ready' | 'error'
+  error?: string
+}
+
 export interface ChatMessage {
   id: string
   role: Role
   content: string
   reasoning?: string
   model?: string
+  attachments?: Attachment[]
   createdAt: number
   /** true while the assistant reply is still streaming in */
   streaming?: boolean
+  /** true while attachments are being uploaded/extracted */
+  preparing?: boolean
   error?: string
 }
 

@@ -6,9 +6,44 @@ import {
   oneDark,
   oneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Check, Copy, ChevronDown, ChevronRight, Brain, AlertCircle } from 'lucide-react'
-import type { ChatMessage } from '@/lib/types'
+import { Check, Copy, ChevronDown, ChevronRight, Brain, AlertCircle, FileText } from 'lucide-react'
+import type { Attachment, ChatMessage } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
+import { formatSize } from '@/lib/files'
+
+function AttachmentChip({ attachment }: { attachment: Attachment }) {
+  if (attachment.kind === 'image' && attachment.dataUrl) {
+    return (
+      <img
+        src={attachment.dataUrl}
+        alt={attachment.name}
+        title={attachment.name}
+        className="h-20 w-20 rounded-lg border border-border object-cover"
+      />
+    )
+  }
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${
+        attachment.status === 'error'
+          ? 'border-destructive/50 bg-destructive/10'
+          : 'border-border bg-background/60'
+      }`}
+      title={attachment.status === 'error' ? attachment.error : attachment.name}
+    >
+      <FileText
+        size={16}
+        className={attachment.status === 'error' ? 'text-destructive' : 'text-primary'}
+      />
+      <span className="max-w-[160px]">
+        <span className="block truncate text-xs font-medium">{attachment.name}</span>
+        <span className="block text-[10px] text-muted-foreground">
+          {attachment.status === 'error' ? 'Failed to read' : formatSize(attachment.size)}
+        </span>
+      </span>
+    </div>
+  )
+}
 
 function CodeBlock({
   language,
@@ -155,8 +190,19 @@ export const MessageItem = memo(function MessageItem({
   if (message.role === 'user') {
     return (
       <div className="rise-in flex justify-end px-4 py-2 md:px-8">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 md:max-w-[75%]">
-          <p className="whitespace-pre-wrap leading-7">{message.content}</p>
+        <div className="max-w-[85%] md:max-w-[75%]">
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap justify-end gap-2">
+              {message.attachments.map((a) => (
+                <AttachmentChip key={a.id} attachment={a} />
+              ))}
+            </div>
+          )}
+          {message.content && (
+            <div className="rounded-2xl rounded-br-md bg-accent px-4 py-2.5">
+              <p className="whitespace-pre-wrap leading-7">{message.content}</p>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -186,7 +232,9 @@ export const MessageItem = memo(function MessageItem({
                 <Markdown text={message.content} dark={dark} />
               </div>
             ) : (
-              <span className="text-sm text-muted-foreground">Thinking…</span>
+              <span className="text-sm text-muted-foreground">
+                {message.preparing ? 'Reading uploaded files…' : 'Thinking…'}
+              </span>
             )}
           </div>
         )}

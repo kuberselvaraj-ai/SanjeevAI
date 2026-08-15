@@ -8,6 +8,9 @@ video generation).
 ## Features
 
 - Streaming chat with Markdown rendering, syntax-highlighted code blocks, and copy buttons
+- **File uploads** — attach PDF, Word, Excel, PowerPoint, text/code files (extracted by
+  the Kimi Files API, OCR included) or images (understood natively by Kimi K3 vision),
+  then ask questions about them. Multiple files per message, kept as conversation context
 - Model switcher in the composer — switch models mid-conversation
 - Multiple conversations with local history, rename-free auto titles, delete
 - Video generation: text-to-video and image-to-video (first frame), with status

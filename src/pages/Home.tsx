@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { KeyRound } from 'lucide-react'
-import type { Conversation, Settings, VideoJob } from '@/lib/types'
+import type { Attachment, Conversation, Settings, VideoJob } from '@/lib/types'
 import { store, uid } from '@/lib/storage'
-import { streamChat } from '@/lib/kimi'
+import { streamChat, type ApiMessage, type MessagePart } from '@/lib/kimi'
 import { pollVideoTask } from '@/lib/video'
+import { processFile } from '@/lib/files'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/models'
 import { Sidebar, type View } from '@/components/Sidebar'
 import { ChatView } from '@/components/ChatView'
@@ -70,8 +71,43 @@ export default function Home() {
     [activeId],
   )
 
+  /** Convert stored messages into the API payload: document extracts become
+   *  system context, images become vision parts on their user message. */
+  const buildApiMessages = useCallback(
+    (systemPrompt: string, messages: Conversation['messages']): ApiMessage[] => {
+      const out: ApiMessage[] = [{ role: 'system', content: systemPrompt }]
+      for (const m of messages) {
+        if (m.error) continue
+        const docs = (m.attachments ?? []).filter(
+          (a) => a.kind === 'doc' && a.status === 'ready' && a.extractedText,
+        )
+        for (const d of docs) {
+          out.push({
+            role: 'system',
+            content: `Document "${d.name}":\n\n${d.extractedText}`,
+          })
+        }
+        const images = (m.attachments ?? []).filter(
+          (a) => a.kind === 'image' && a.status === 'ready' && a.dataUrl,
+        )
+        if (m.role === 'user' && images.length > 0) {
+          const parts: MessagePart[] = images.map((img) => ({
+            type: 'image_url',
+            image_url: { url: img.dataUrl! },
+          }))
+          if (m.content) parts.push({ type: 'text', text: m.content })
+          out.push({ role: 'user', content: parts })
+        } else {
+          out.push({ role: m.role, content: m.content })
+        }
+      }
+      return out
+    },
+    [],
+  )
+
   const send = useCallback(
-    (text: string) => {
+    async (text: string, files: File[] = []) => {
       if (!settings.moonshotKey) {
         setSettingsOpen(true)
         return
@@ -92,11 +128,13 @@ export default function Home() {
         setActiveId(conv.id)
       }
       const id = convId
+      const model = conversations.find((c) => c.id === id)?.model ?? settings.defaultModel
 
       const userMsg = {
         id: uid(),
         role: 'user' as const,
         content: text,
+        attachments: [] as Attachment[],
         createdAt: Date.now(),
       }
       const assistantMsg = {
@@ -104,31 +142,67 @@ export default function Home() {
         role: 'assistant' as const,
         content: '',
         reasoning: '',
-        model: conversations.find((c) => c.id === id)?.model ?? settings.defaultModel,
+        model,
         createdAt: Date.now(),
         streaming: true,
+        preparing: files.length > 0,
       }
 
-      let apiMessages: Conversation['messages'] = []
-      updateConversation(id, (c) => {
-        const base = c.messages.filter((m) => !m.error)
-        apiMessages = [
-          { id: 'sys', role: 'system', content: c.systemPrompt, createdAt: 0 },
-          ...base,
-          userMsg,
-        ]
-        return {
+      updateConversation(id, (c) => ({
+        ...c,
+        title: c.title || text.slice(0, 42) || files[0]?.name || 'Attachments',
+        messages: [...c.messages, userMsg, assistantMsg],
+        updatedAt: Date.now(),
+      }))
+
+      // Upload / extract attachments first
+      let attachments: Attachment[] = []
+      if (files.length > 0) {
+        setStreaming(true)
+        attachments = await Promise.all(files.map((f) => processFile(settings, f)))
+        updateConversation(id, (c) => ({
           ...c,
-          title: c.title || text.slice(0, 42),
-          messages: [...c.messages, userMsg, assistantMsg],
-          updatedAt: Date.now(),
+          messages: c.messages.map((m) =>
+            m.id === userMsg.id
+              ? { ...m, attachments }
+              : m.id === assistantMsg.id
+                ? { ...m, preparing: false }
+                : m,
+          ),
+        }))
+        const failures = attachments.filter((a) => a.status === 'error')
+        if (failures.length > 0 && failures.length === attachments.length) {
+          updateConversation(id, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMsg.id
+                ? {
+                    ...m,
+                    streaming: false,
+                    error: `Could not process the attachment(s): ${failures
+                      .map((f) => `${f.name} — ${f.error}`)
+                      .join('; ')}`,
+                  }
+                : m,
+            ),
+          }))
+          setStreaming(false)
+          return
         }
-      })
+      }
 
       setStreaming(true)
       const controller = new AbortController()
       abortRef.current = controller
-      const model = assistantMsg.model!
+
+      // Build payload: stored history + the new message with its attachments.
+      // (`conversations` here is the pre-send snapshot, so append userMsg explicitly.)
+      const conv = conversations.find((c) => c.id === id)
+      const prior = (conv?.messages ?? []).filter((m) => !m.error)
+      const apiMessages: ApiMessage[] = buildApiMessages(
+        conv?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+        [...prior, { ...userMsg, attachments }],
+      )
 
       streamChat(
         settings,
@@ -174,7 +248,7 @@ export default function Home() {
         controller.signal,
       )
     },
-    [activeId, conversations, settings, updateConversation],
+    [activeId, conversations, settings, updateConversation, buildApiMessages],
   )
 
   const stop = useCallback(() => {
@@ -253,7 +327,7 @@ export default function Home() {
           <ChatView
             conversation={active}
             dark={settings.theme === 'dark'}
-            onSuggestion={send}
+            onSuggestion={(p) => send(p)}
             onOpenSidebar={() => setSidebarOpen(true)}
             headerExtra={
               noKey ? (
