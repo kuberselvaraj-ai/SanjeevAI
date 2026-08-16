@@ -31,6 +31,18 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
+
+  // Diagnostics: surface load failures instead of a silent white screen
+  win.webContents.on('did-fail-load', (_e, code, desc) => {
+    console.error(`[Sanjeev AI] page failed to load (${code}): ${desc}`)
+  })
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[Sanjeev AI] renderer crashed:', details.reason)
+  })
+  // Run with SANJEEV_DEBUG=1 to open DevTools and inspect errors
+  if (process.env.SANJEEV_DEBUG === '1') {
+    win.webContents.openDevTools({ mode: 'detach' })
+  }
 }
 
 app.whenReady().then(() => {
