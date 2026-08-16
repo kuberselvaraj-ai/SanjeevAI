@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: Settings = {
   temperature: 0.6,
   theme: 'light',
   defaultModel: DEFAULT_MODEL,
+  webSearch: false,
 }
 
 function read<T>(key: string, fallback: T): T {

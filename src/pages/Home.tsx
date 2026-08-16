@@ -75,7 +75,13 @@ export default function Home() {
    *  system context, images become vision parts on their user message. */
   const buildApiMessages = useCallback(
     (systemPrompt: string, messages: Conversation['messages']): ApiMessage[] => {
-      const out: ApiMessage[] = [{ role: 'system', content: systemPrompt }]
+      const now = new Date()
+      const timeLine = `Current date and time: ${now.toLocaleString()} (timezone: ${
+        Intl.DateTimeFormat().resolvedOptions().timeZone
+      }). Use this when the user asks about "today", "now", deadlines, or recency.`
+      const out: ApiMessage[] = [
+        { role: 'system', content: `${systemPrompt}\n\n${timeLine}` },
+      ]
       for (const m of messages) {
         if (m.error) continue
         const docs = (m.attachments ?? []).filter(
@@ -225,6 +231,13 @@ export default function Home() {
                   : m,
               ),
             })),
+          onStatus: (s) =>
+            updateConversation(id, (c) => ({
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === assistantMsg.id ? { ...m, statusText: s ?? undefined } : m,
+              ),
+            })),
           onDone: () => {
             updateConversation(id, (c) => ({
               ...c,
@@ -348,6 +361,10 @@ export default function Home() {
             onStop={stop}
             streaming={streaming}
             disabled={noKey}
+            webSearch={settings.webSearch}
+            onToggleWebSearch={() =>
+              setSettings((s) => ({ ...s, webSearch: !s.webSearch }))
+            }
           />
         </div>
       ) : (

@@ -26,6 +26,8 @@ export interface ChatMessage {
   streaming?: boolean
   /** true while attachments are being uploaded/extracted */
   preparing?: boolean
+  /** transient status shown while working, e.g. "Searching the web…" */
+  statusText?: string
   error?: string
 }
 
@@ -49,6 +51,8 @@ export interface Settings {
   temperature: number
   theme: 'light' | 'dark'
   defaultModel: string
+  /** enable Kimi's built-in $web_search tool (billed per search call) */
+  webSearch: boolean
 }
 
 export type VideoStatus = 'queued' | 'processing' | 'success' | 'failed'

@@ -233,7 +233,9 @@ export const MessageItem = memo(function MessageItem({
               </div>
             ) : (
               <span className="text-sm text-muted-foreground">
-                {message.preparing ? 'Reading uploaded files…' : 'Thinking…'}
+                {message.preparing
+                  ? 'Reading uploaded files…'
+                  : (message.statusText ?? 'Thinking…')}
               </span>
             )}
           </div>

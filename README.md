@@ -15,6 +15,8 @@ video generation).
 - Multiple conversations with local history, rename-free auto titles, delete
 - Video generation: text-to-video and image-to-video (first frame), with status
   polling, in-app playback and MP4 download
+- **Web search toggle** (globe icon) — lets Kimi search the internet for current
+  facts; the app also injects the current date/time into every conversation
 - Light (warm paper) and dark themes
 - API keys stored only in the app's local storage on your machine
 
@@ -52,6 +54,23 @@ npm run dev
 ```
 
 Then open http://localhost:3000.
+
+## Windows build
+
+```bash
+npm run electron:dist:win   # produces release/Sanjeev AI Setup 1.0.0.exe
+```
+
+Works when built from a Mac. The installer is unsigned — Windows SmartScreen will
+warn once ("More info → Run anyway").
+
+## iPhone / iPad
+
+Electron can't build iOS apps. Instead use the hosted web version: publish the site
+(the Publish button on the Kimi version card), open the URL in Safari on the iPhone,
+then Share → **Add to Home Screen**. It installs as a full-screen app icon.
+(A true App Store build would require a Capacitor wrapper, Xcode, and an Apple
+Developer account.)
 
 ## Using the app
 

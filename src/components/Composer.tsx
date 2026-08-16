@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2 } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe } from 'lucide-react'
 import { KIMI_MODELS, modelLabel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
 
@@ -15,6 +15,8 @@ export function Composer({
   onStop,
   streaming,
   disabled,
+  webSearch,
+  onToggleWebSearch,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -22,6 +24,8 @@ export function Composer({
   onStop: () => void
   streaming: boolean
   disabled: boolean
+  webSearch: boolean
+  onToggleWebSearch: () => void
 }) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
@@ -144,6 +148,25 @@ export function Composer({
                 title="Attach documents or images"
               >
                 <Paperclip size={16} />
+              </button>
+
+              {/* Web search toggle */}
+              <button
+                onClick={onToggleWebSearch}
+                disabled={disabled}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
+                  webSearch
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
+                title={
+                  webSearch
+                    ? 'Web search ON — Kimi searches the internet when needed (per-search fee applies)'
+                    : 'Web search OFF — turn on to let Kimi look things up online'
+                }
+              >
+                <Globe size={15} />
+                {webSearch && <span className="hidden sm:inline">Search</span>}
               </button>
 
               {/* Model switcher */}

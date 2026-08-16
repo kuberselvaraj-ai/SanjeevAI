@@ -50,7 +50,7 @@ export function ChatView({
   const empty = messages.length === 0
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <header className="flex items-center gap-2 border-b border-border px-4 py-3 md:px-6">
         <button
