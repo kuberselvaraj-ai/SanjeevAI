@@ -11,6 +11,7 @@ import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { VideoView } from '@/components/VideoView'
+import { WorkspaceDialog, type WorkspaceSelection } from '@/components/WorkspaceDialog'
 
 export default function Home() {
   const [settings, setSettings] = useState<Settings>(() => store.loadSettings())
@@ -23,6 +24,8 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [videos, setVideos] = useState<VideoJob[]>(() => store.loadVideos())
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
 
   const abortRef = useRef<AbortController | null>(null)
 
@@ -139,7 +142,7 @@ export default function Home() {
       const userMsg = {
         id: uid(),
         role: 'user' as const,
-        content: text,
+        content: text || (workspace ? `Let's work on the ${workspace.rootLabel} codebase.` : ''),
         attachments: [] as Attachment[],
         createdAt: Date.now(),
       }
@@ -156,16 +159,27 @@ export default function Home() {
 
       updateConversation(id, (c) => ({
         ...c,
-        title: c.title || text.slice(0, 42) || files[0]?.name || 'Attachments',
+        title: c.title || text.slice(0, 42) || workspace?.rootLabel || files[0]?.name || 'Attachments',
         messages: [...c.messages, userMsg, assistantMsg],
         updatedAt: Date.now(),
       }))
 
+      // Workspace files ride along as ready-made document context
+      const workspaceAttachments: Attachment[] = (workspace?.files ?? []).map((f) => ({
+        id: uid(),
+        name: `${workspace!.rootLabel}/${f.path}`,
+        mimeType: 'text/plain',
+        size: f.content.length,
+        kind: 'doc' as const,
+        extractedText: f.content,
+        status: 'ready' as const,
+      }))
+
       // Upload / extract attachments first
-      let attachments: Attachment[] = []
+      let attachments: Attachment[] = [...workspaceAttachments]
       if (files.length > 0) {
         setStreaming(true)
-        attachments = await Promise.all(files.map((f) => processFile(settings, f)))
+        attachments = [...workspaceAttachments, ...(await Promise.all(files.map((f) => processFile(settings, f))))]
         updateConversation(id, (c) => ({
           ...c,
           messages: c.messages.map((m) =>
@@ -198,6 +212,7 @@ export default function Home() {
       }
 
       setStreaming(true)
+      setWorkspace(null)
       const controller = new AbortController()
       abortRef.current = controller
 
@@ -261,7 +276,7 @@ export default function Home() {
         controller.signal,
       )
     },
-    [activeId, conversations, settings, updateConversation, buildApiMessages],
+    [activeId, conversations, settings, updateConversation, buildApiMessages, workspace],
   )
 
   const stop = useCallback(() => {
@@ -365,6 +380,11 @@ export default function Home() {
             onToggleWebSearch={() =>
               setSettings((s) => ({ ...s, webSearch: !s.webSearch }))
             }
+            onOpenWorkspace={() => setWorkspaceOpen(true)}
+            workspaceSummary={
+              workspace ? { label: workspace.rootLabel, count: workspace.files.length } : null
+            }
+            onClearWorkspace={() => setWorkspace(null)}
           />
         </div>
       ) : (
@@ -375,6 +395,16 @@ export default function Home() {
           onDeleteJob={(id) => setVideos((prev) => prev.filter((v) => v.id !== id))}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenSidebar={() => setSidebarOpen(true)}
+        />
+      )}
+
+      {workspaceOpen && (
+        <WorkspaceDialog
+          onConfirm={(sel) => {
+            setWorkspace(sel)
+            setWorkspaceOpen(false)
+          }}
+          onClose={() => setWorkspaceOpen(false)}
         />
       )}
 

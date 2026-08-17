@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2 } from 'lucide-react'
 import { KIMI_MODELS, modelLabel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
 
@@ -17,6 +17,9 @@ export function Composer({
   disabled,
   webSearch,
   onToggleWebSearch,
+  onOpenWorkspace,
+  workspaceSummary,
+  onClearWorkspace,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -26,6 +29,9 @@ export function Composer({
   disabled: boolean
   webSearch: boolean
   onToggleWebSearch: () => void
+  onOpenWorkspace: () => void
+  workspaceSummary: { label: string; count: number } | null
+  onClearWorkspace: () => void
 }) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
@@ -169,6 +175,34 @@ export function Composer({
                 {webSearch && <span className="hidden sm:inline">Search</span>}
               </button>
 
+              {/* Code workspace */}
+              <button
+                onClick={onOpenWorkspace}
+                disabled={disabled}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
+                  workspaceSummary
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
+                title="Attach files from a local folder or git repo as context"
+              >
+                <FolderGit2 size={15} />
+                {workspaceSummary && (
+                  <span className="hidden sm:inline">
+                    {workspaceSummary.label} · {workspaceSummary.count}
+                  </span>
+                )}
+              </button>
+              {workspaceSummary && (
+                <button
+                  onClick={onClearWorkspace}
+                  className="rounded-md p-1 text-muted-foreground hover:text-destructive"
+                  title="Detach workspace"
+                >
+                  <X size={13} />
+                </button>
+              )}
+
               {/* Model switcher */}
               <div className="relative" ref={menuRef}>
                 <button
@@ -229,7 +263,7 @@ export function Composer({
             ) : (
               <button
                 onClick={submit}
-                disabled={(!text.trim() && files.length === 0) || disabled}
+                disabled={(!text.trim() && files.length === 0 && !workspaceSummary) || disabled}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
                 title="Send"
               >

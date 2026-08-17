@@ -1,5 +1,6 @@
 import type { Conversation, Settings, VideoJob } from './types'
 import { DEFAULT_MODEL } from './models'
+import { BUNDLED_MOONSHOT_KEY } from './bundled-config'
 
 const KEYS = {
   settings: 'kimi-studio:settings',
@@ -48,7 +49,12 @@ function write(key: string, value: unknown) {
 }
 
 export const store = {
-  loadSettings: (): Settings => read(KEYS.settings, DEFAULT_SETTINGS),
+  loadSettings: (): Settings => {
+    const s = read(KEYS.settings, DEFAULT_SETTINGS)
+    // A key bundled into this build acts as the default when none is saved
+    if (!s.moonshotKey && BUNDLED_MOONSHOT_KEY) s.moonshotKey = BUNDLED_MOONSHOT_KEY
+    return s
+  },
   saveSettings: (s: Settings) => write(KEYS.settings, s),
   loadConversations: (): Conversation[] => readArray<Conversation>(KEYS.conversations),
   saveConversations: (c: Conversation[]) => write(KEYS.conversations, c),
