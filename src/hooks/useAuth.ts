@@ -6,11 +6,16 @@ import { LOGIN_PATH } from "@/const";
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
   redirectPath?: string;
+  /** Set false in the desktop app, where there is no server to talk to. */
+  enabled?: boolean;
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = LOGIN_PATH } =
-    options ?? {};
+  const {
+    redirectOnUnauthenticated = false,
+    redirectPath = LOGIN_PATH,
+    enabled = true,
+  } = options ?? {};
 
   const navigate = useNavigate();
 
@@ -24,6 +29,7 @@ export function useAuth(options?: UseAuthOptions) {
   } = trpc.auth.me.useQuery(undefined, {
     staleTime: 1000 * 60 * 5,
     retry: false,
+    enabled,
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({

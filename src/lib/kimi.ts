@@ -27,13 +27,13 @@ export interface StreamCallbacks {
   onError: (err: string) => void
 }
 
-const WEB_SEARCH_TOOL = {
+export const WEB_SEARCH_TOOL = {
   type: 'builtin_function',
   function: { name: '$web_search' },
 }
 
 /** Accumulate streamed tool_call deltas (they arrive fragmented by index). */
-function mergeToolCallDelta(acc: ToolCall[], deltas: unknown[]): ToolCall[] {
+export function mergeToolCallDelta(acc: ToolCall[], deltas: unknown[]): ToolCall[] {
   const next = [...acc]
   for (const raw of deltas as Array<{
     index: number
@@ -63,9 +63,8 @@ async function streamRound(
 ): Promise<{ finishReason: string | null; toolCalls: ToolCall[] }> {
   const base = settings.moonshotBaseUrl.replace(/\/+$/, '')
 
-  let res: Response
-  try {
-    res = await fetch(`${base}/chat/completions`, {
+  const call = (temperature: number) =>
+    fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -74,12 +73,29 @@ async function streamRound(
       body: JSON.stringify({
         model,
         messages,
-        temperature: settings.temperature,
+        temperature,
         stream: true,
         ...(webSearch ? { tools: [WEB_SEARCH_TOOL] } : {}),
       }),
       signal,
     })
+
+  let res: Response
+  try {
+    res = await call(settings.temperature)
+    // Some models (e.g. kimi-k2.6) only accept temperature=1 — retry transparently.
+    if (res.status === 400 && settings.temperature !== 1) {
+      const errBody = await res.text().catch(() => '')
+      if (errBody.includes('invalid temperature')) {
+        res = await call(1)
+      } else {
+        res = new Response(errBody, {
+          status: res.status,
+          statusText: res.statusText,
+          headers: res.headers,
+        })
+      }
+    }
   } catch (e) {
     if ((e as Error).name === 'AbortError') return { finishReason: 'stop', toolCalls: [] }
     throw new Error(`Network error: ${(e as Error).message}`)

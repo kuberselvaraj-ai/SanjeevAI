@@ -1,5 +1,5 @@
 node_modules
-dist
+release
 .git
-*.swp
 *.log
+.DS_Store

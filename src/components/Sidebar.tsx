@@ -1,8 +1,15 @@
-import { MessageSquare, Plus, Settings, Trash2, Clapperboard, Moon, Sun, X } from 'lucide-react'
+import { MessageSquare, Plus, Settings, Trash2, Clapperboard, Moon, Sun, X, LogOut, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router'
 import type { Conversation } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
 
 export type View = 'chat' | 'video'
+
+export interface SidebarUser {
+  name?: string | null
+  email?: string | null
+  role: string
+}
 
 export function Sidebar({
   view,
@@ -17,6 +24,10 @@ export function Sidebar({
   onToggleTheme,
   open,
   onClose,
+  hosted = false,
+  user = null,
+  usageSummary = null,
+  onLogout,
 }: {
   view: View
   onViewChange: (v: View) => void
@@ -30,6 +41,10 @@ export function Sidebar({
   onToggleTheme: () => void
   open: boolean
   onClose: () => void
+  hosted?: boolean
+  user?: SidebarUser | null
+  usageSummary?: string | null
+  onLogout?: () => void
 }) {
   return (
     <>
@@ -147,6 +162,43 @@ export function Sidebar({
             </>
           )}
         </div>
+
+        {/* Account (hosted mode) */}
+        {hosted && user && (
+          <div className="border-t border-sidebar-border px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                {(user.name || user.email || '?').slice(0, 1).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium">
+                  {user.name || user.email || 'Account'}
+                </p>
+                {usageSummary && (
+                  <p className="truncate text-[10.5px] text-muted-foreground">{usageSummary}</p>
+                )}
+              </div>
+              {user.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                  title="Admin dashboard"
+                >
+                  <ShieldCheck size={15} />
+                </Link>
+              )}
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                  title="Log out"
+                >
+                  <LogOut size={15} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-sidebar-border px-4 py-3">

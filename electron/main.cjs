@@ -31,7 +31,7 @@ function createWindow() {
   if (isDev) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'))
+    win.loadFile(path.join(__dirname, '../dist/public/index.html'))
   }
 
   // Diagnostics: surface load failures instead of a silent white screen

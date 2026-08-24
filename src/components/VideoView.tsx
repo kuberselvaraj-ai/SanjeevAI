@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Clapperboard, Download, Loader2, Trash2, AlertCircle, Film } from 'lucide-react'
 import type { Settings, VideoJob } from '@/lib/types'
+import { trpc } from '@/providers/trpc'
 import {
   VIDEO_MODELS,
   VIDEO_DURATIONS,
@@ -15,6 +16,7 @@ import { uid } from '@/lib/storage'
 
 export function VideoView({
   settings,
+  hosted = false,
   jobs,
   onCreateJob,
   onDeleteJob,
@@ -22,6 +24,8 @@ export function VideoView({
   onOpenSidebar,
 }: {
   settings: Settings
+  /** Hosted mode: create/poll via the server (it holds the MiniMax key). */
+  hosted?: boolean
   jobs: VideoJob[]
   onCreateJob: (job: VideoJob) => void
   onDeleteJob: (id: string) => void
@@ -37,8 +41,10 @@ export function VideoView({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const noKey = !settings.minimaxKey
+  const noKey = !hosted && !settings.minimaxKey
   const h3 = isH3(model)
+  const createMutation = trpc.video.create.useMutation()
+  const trpcUtils = trpc.useUtils()
 
   const changeModel = (m: string) => {
     setModel(m)
@@ -56,14 +62,18 @@ export function VideoView({
     setSubmitting(true)
     setError('')
     try {
-      const taskId = await createVideoTask(settings, {
+      const payload = {
         prompt: prompt.trim(),
         model,
         duration,
         resolution,
         ratio,
         firstFrameImage: imageUrl.trim() || undefined,
-      })
+      }
+      const taskId = hosted
+        ? (await createMutation.mutateAsync(payload)).taskId
+        : await createVideoTask(settings, payload)
+      if (hosted) trpcUtils.usage.mine.invalidate()
       onCreateJob({
         id: uid(),
         taskId,
@@ -104,7 +114,7 @@ export function VideoView({
           </h2>
           <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
             The Kimi API doesn't expose video generation, so this panel uses MiniMax
-            Hailuo with your own API key.
+            Hailuo{hosted ? ' — included with your plan.' : ' with your own API key.'}
           </p>
 
           {noKey && (

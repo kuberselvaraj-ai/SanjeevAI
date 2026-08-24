@@ -54,10 +54,13 @@ function SecretField({
 
 export function SettingsDialog({
   settings,
+  hosted = false,
   onSave,
   onClose,
 }: {
   settings: Settings
+  /** Hosted web mode: keys live on the server, so hide the key fields. */
+  hosted?: boolean
   onSave: (s: Settings) => void
   onClose: () => void
 }) {
@@ -80,23 +83,32 @@ export function SettingsDialog({
         </div>
 
         <div className="space-y-5 px-5 py-5">
-          <SecretField
-            label="Kimi API key (Moonshot AI)"
-            value={draft.moonshotKey}
-            onChange={(v) => set('moonshotKey', v)}
-            placeholder="sk-..."
-            helpUrl="https://platform.moonshot.ai/console/api-keys"
-            helpText="Get a key at platform.moonshot.ai"
-          />
+          {hosted ? (
+            <p className="rounded-lg bg-muted px-3 py-2.5 text-[12px] leading-6 text-muted-foreground">
+              You're signed in to hosted Sanjeev AI — API keys are managed on the server,
+              and your monthly limits follow your plan. Nothing to configure here.
+            </p>
+          ) : (
+            <>
+              <SecretField
+                label="Kimi API key (Moonshot AI)"
+                value={draft.moonshotKey}
+                onChange={(v) => set('moonshotKey', v)}
+                placeholder="sk-..."
+                helpUrl="https://platform.moonshot.ai/console/api-keys"
+                helpText="Get a key at platform.moonshot.ai"
+              />
 
-          <SecretField
-            label="MiniMax API key (for video generation)"
-            value={draft.minimaxKey}
-            onChange={(v) => set('minimaxKey', v)}
-            placeholder="MiniMax API key"
-            helpUrl="https://platform.minimax.io/"
-            helpText="Get a key at platform.minimax.io"
-          />
+              <SecretField
+                label="MiniMax API key (for video generation)"
+                value={draft.minimaxKey}
+                onChange={(v) => set('minimaxKey', v)}
+                placeholder="MiniMax API key"
+                helpUrl="https://platform.minimax.io/"
+                helpText="Get a key at platform.minimax.io"
+              />
+            </>
+          )}
 
           <div>
             <label className="mb-1.5 block text-[13px] font-medium">Default model</label>
@@ -134,6 +146,7 @@ export function SettingsDialog({
             />
           </div>
 
+          {!hosted && (
           <details className="rounded-lg border border-border">
             <summary className="cursor-pointer px-3 py-2.5 text-[13px] font-medium text-muted-foreground">
               Advanced — API endpoints
@@ -160,11 +173,14 @@ export function SettingsDialog({
               </p>
             </div>
           </details>
+          )}
 
-          <p className="rounded-lg bg-muted px-3 py-2.5 text-[11px] leading-5 text-muted-foreground">
-            Keys are stored only in this app's local storage on your machine and are sent
-            directly to the respective APIs — nowhere else.
-          </p>
+          {!hosted && (
+            <p className="rounded-lg bg-muted px-3 py-2.5 text-[11px] leading-5 text-muted-foreground">
+              Keys are stored only in this app's local storage on your machine and are sent
+              directly to the respective APIs — nowhere else.
+            </p>
+          )}
         </div>
 
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-popover px-5 py-4">

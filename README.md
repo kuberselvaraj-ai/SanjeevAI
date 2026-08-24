@@ -108,3 +108,35 @@ npm install
 
 React + TypeScript + Vite + Tailwind (renderer), Electron (shell). The Kimi API is
 OpenAI-compatible and called directly from the app; no server is involved.
+
+## Hosted mode (multi-user web app)
+
+The same codebase now runs as a hosted, multi-user web app (tRPC + Hono + MySQL via
+Drizzle). In the browser it requires login; the Electron desktop app is unaffected and
+still uses each user's own API keys.
+
+- **Accounts**: email/password signup + "Sign in with Kimi" (OAuth). Session = httpOnly
+  JWT cookie (1 year).
+- **Server-side keys**: `MOONSHOT_API_KEY` and `MINIMAX_API_KEY` are read from server
+  env (`.env`, gitignored) — they never reach the browser. The browser calls
+  `/api/hosted/chat` (SSE relay) and `/api/hosted/extract`; video generation goes
+  through the `video` tRPC router.
+- **Plans & metering**: every chat records token usage and every video records one
+  credit in `usage_events`. Monthly limits live in `contracts/constants.ts` (`PLANS`):
+  Free = 500K tokens + 3 videos, Pro = 8M tokens + 30 videos. Admin role = unlimited.
+- **Admin**: the app owner (portal creator) becomes admin automatically when signing
+  in with Kimi. Alternatively set `ADMIN_EMAILS=you@example.com` in `.env` and sign up
+  with that email. Admin UI at `/#/admin` — user list, monthly usage, plan and role
+  management.
+
+### Run the hosted app locally
+
+```bash
+npm run db:push   # sync schema to the database (first time)
+npm run dev       # http://localhost:3000 — API + frontend
+```
+
+### Production
+
+`npm run build` outputs the frontend to `dist/public` and the server bundle to
+`dist/boot.js`; `npm start` serves both on port 3000. A `Dockerfile` is included.

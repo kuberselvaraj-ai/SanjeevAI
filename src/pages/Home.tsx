@@ -5,7 +5,11 @@ import { store, uid } from '@/lib/storage'
 import { streamChat, type ApiMessage, type MessagePart } from '@/lib/kimi'
 import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
+import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
+import { isDesktop } from '@/lib/desktop'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/models'
+import { trpc } from '@/providers/trpc'
+import { useAuth } from '@/hooks/useAuth'
 import { Sidebar, type View } from '@/components/Sidebar'
 import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
@@ -14,6 +18,21 @@ import { VideoView } from '@/components/VideoView'
 import { WorkspaceDialog, type WorkspaceSelection } from '@/components/WorkspaceDialog'
 
 export default function Home() {
+  // Desktop (Electron) = user-supplied keys, direct API calls.
+  // Hosted (browser) = login required, server holds keys, usage is metered.
+  const desktop = isDesktop()
+  const hosted = !desktop
+  const {
+    user,
+    isLoading: authLoading,
+    logout,
+  } = useAuth({ redirectOnUnauthenticated: hosted, enabled: hosted })
+  const trpcUtils = trpc.useUtils()
+  const usageQuery = trpc.usage.mine.useQuery(undefined, {
+    enabled: hosted && !!user,
+    retry: false,
+  })
+
   const [settings, setSettings] = useState<Settings>(() => store.loadSettings())
   const [conversations, setConversations] = useState<Conversation[]>(() =>
     store.loadConversations(),
@@ -117,10 +136,11 @@ export default function Home() {
 
   const send = useCallback(
     async (text: string, files: File[] = []) => {
-      if (!settings.moonshotKey) {
+      if (desktop && !settings.moonshotKey) {
         setSettingsOpen(true)
         return
       }
+      if (hosted && !user) return // auth hook redirects to /login
       let convId = activeId
       if (!convId || !conversations.some((c) => c.id === convId)) {
         const conv: Conversation = {
@@ -179,7 +199,12 @@ export default function Home() {
       let attachments: Attachment[] = [...workspaceAttachments]
       if (files.length > 0) {
         setStreaming(true)
-        attachments = [...workspaceAttachments, ...(await Promise.all(files.map((f) => processFile(settings, f))))]
+        attachments = [
+          ...workspaceAttachments,
+          ...(await Promise.all(
+            files.map((f) => (hosted ? processFileHosted(f) : processFile(settings, f))),
+          )),
+        ]
         updateConversation(id, (c) => ({
           ...c,
           messages: c.messages.map((m) =>
@@ -225,58 +250,80 @@ export default function Home() {
         [...prior, { ...userMsg, attachments }],
       )
 
-      streamChat(
-        settings,
-        model,
-        apiMessages,
-        {
-          onToken: (t) =>
-            updateConversation(id, (c) => ({
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === assistantMsg.id ? { ...m, content: m.content + t } : m,
-              ),
-            })),
-          onReasoning: (t) =>
-            updateConversation(id, (c) => ({
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === assistantMsg.id
-                  ? { ...m, reasoning: (m.reasoning ?? '') + t }
-                  : m,
-              ),
-            })),
-          onStatus: (s) =>
-            updateConversation(id, (c) => ({
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === assistantMsg.id ? { ...m, statusText: s ?? undefined } : m,
-              ),
-            })),
-          onDone: () => {
-            updateConversation(id, (c) => ({
-              ...c,
-              updatedAt: Date.now(),
-              messages: c.messages.map((m) =>
-                m.id === assistantMsg.id ? { ...m, streaming: false } : m,
-              ),
-            }))
-            setStreaming(false)
-          },
-          onError: (err) => {
-            updateConversation(id, (c) => ({
-              ...c,
-              messages: c.messages.map((m) =>
-                m.id === assistantMsg.id ? { ...m, streaming: false, error: err } : m,
-              ),
-            }))
-            setStreaming(false)
-          },
+      const callbacks = {
+        onToken: (t: string) =>
+          updateConversation(id, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMsg.id ? { ...m, content: m.content + t } : m,
+            ),
+          })),
+        onReasoning: (t: string) =>
+          updateConversation(id, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMsg.id
+                ? { ...m, reasoning: (m.reasoning ?? '') + t }
+                : m,
+            ),
+          })),
+        onStatus: (s: string | null) =>
+          updateConversation(id, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMsg.id ? { ...m, statusText: s ?? undefined } : m,
+            ),
+          })),
+        onDone: () => {
+          updateConversation(id, (c) => ({
+            ...c,
+            updatedAt: Date.now(),
+            messages: c.messages.map((m) =>
+              m.id === assistantMsg.id ? { ...m, streaming: false } : m,
+            ),
+          }))
+          setStreaming(false)
+          if (hosted) trpcUtils.usage.mine.invalidate()
         },
-        controller.signal,
-      )
+        onError: (err: string) => {
+          updateConversation(id, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantMsg.id ? { ...m, streaming: false, error: err } : m,
+            ),
+          }))
+          setStreaming(false)
+          if (hosted) trpcUtils.usage.mine.invalidate()
+        },
+      }
+
+      if (hosted) {
+        hostedStreamChat(
+          {
+            model,
+            messages: apiMessages,
+            temperature: settings.temperature,
+            webSearch: settings.webSearch,
+          },
+          callbacks,
+          controller.signal,
+        )
+      } else {
+        streamChat(settings, model, apiMessages, callbacks, controller.signal)
+      }
     },
-    [activeId, conversations, settings, updateConversation, buildApiMessages, workspace],
+    [
+      activeId,
+      conversations,
+      settings,
+      updateConversation,
+      buildApiMessages,
+      workspace,
+      desktop,
+      hosted,
+      user,
+      trpcUtils,
+    ],
   )
 
   const stop = useCallback(() => {
@@ -297,12 +344,17 @@ export default function Home() {
   // ----- video polling -----
   useEffect(() => {
     const pending = videos.some((v) => v.status === 'queued' || v.status === 'processing')
-    if (!pending || !settings.minimaxKey) return
+    if (!pending || (desktop && !settings.minimaxKey) || (hosted && !user)) return
     const timer = setInterval(async () => {
       for (const job of videos) {
         if (job.status !== 'queued' && job.status !== 'processing') continue
         try {
-          const result = await pollVideoTask(settings, job.taskId, job.model)
+          const result = hosted
+            ? await trpcUtils.client.video.poll.mutate({
+                taskId: job.taskId,
+                model: job.model,
+              })
+            : await pollVideoTask(settings, job.taskId, job.model)
           if (result.state === 'pending') {
             setVideos((prev) =>
               prev.map((v) => (v.id === job.id ? { ...v, status: 'processing' } : v)),
@@ -326,10 +378,36 @@ export default function Home() {
       }
     }, 8000)
     return () => clearInterval(timer)
-  }, [videos, settings])
+  }, [videos, settings, desktop, hosted, user, trpcUtils])
 
   const currentModel = active?.model ?? settings.defaultModel
-  const noKey = !settings.moonshotKey
+  const noKey = desktop && !settings.moonshotKey
+
+  // Hosted mode: don't render the app while the session check is in flight
+  // (the auth hook redirects to /login when unauthenticated).
+  if (hosted && authLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading Sanjeev AI…</p>
+      </div>
+    )
+  }
+  if (hosted && !user) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Redirecting to sign in…</p>
+      </div>
+    )
+  }
+
+  const usage = usageQuery.data
+  const usageSummary = usage
+    ? usage.unlimited || !usage.limits
+      ? `${usage.planLabel} · unlimited (admin)`
+      : `${usage.planLabel} · ${Math.round(usage.used.tokens / 1000)}K / ${Math.round(
+          usage.limits.monthlyTokens / 1000,
+        )}K tokens · ${usage.used.videos} / ${usage.limits.monthlyVideos} videos`
+    : null
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -348,6 +426,10 @@ export default function Home() {
         }
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        hosted={hosted}
+        user={user ? { name: user.name, email: user.email, role: user.role } : null}
+        usageSummary={usageSummary}
+        onLogout={logout}
       />
 
       {view === 'chat' ? (
@@ -390,6 +472,7 @@ export default function Home() {
       ) : (
         <VideoView
           settings={settings}
+          hosted={hosted}
           jobs={videos}
           onCreateJob={(job) => setVideos((prev) => [job, ...prev])}
           onDeleteJob={(id) => setVideos((prev) => prev.filter((v) => v.id !== id))}
@@ -411,6 +494,7 @@ export default function Home() {
       {settingsOpen && (
         <SettingsDialog
           settings={settings}
+          hosted={hosted}
           onSave={setSettings}
           onClose={() => setSettingsOpen(false)}
         />
