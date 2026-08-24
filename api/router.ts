@@ -3,6 +3,7 @@ import { localAuthRouter } from "./local-auth-router";
 import { usageRouter } from "./usage-router";
 import { videoRouter } from "./video-router";
 import { adminRouter } from "./admin-router";
+import { inviteRouter } from "./invite-router";
 import { createRouter, publicQuery } from "./middleware";
 
 export const appRouter = createRouter({
@@ -12,6 +13,7 @@ export const appRouter = createRouter({
   usage: usageRouter,
   video: videoRouter,
   admin: adminRouter,
+  invite: inviteRouter,
 });
 
 export type AppRouter = typeof appRouter;

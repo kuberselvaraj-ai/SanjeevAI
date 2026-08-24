@@ -4,6 +4,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { createRouter, publicQuery } from "./middleware";
 import { findUserByUnionId, upsertUser } from "./queries/users";
+import { consumeInvite, getValidInvite } from "./queries/invites";
 import { signSessionToken } from "./kimi/session";
 import { getSessionCookieOptions } from "./lib/cookies";
 import { Session } from "@contracts/constants";
@@ -63,7 +64,12 @@ const credentials = z.object({
 
 export const localAuthRouter = createRouter({
   signup: publicQuery
-    .input(credentials.extend({ name: z.string().min(1).max(80) }))
+    .input(
+      credentials.extend({
+        name: z.string().min(1).max(80),
+        code: z.string().min(4, "An invite code is required to sign up."),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const unionId = localId(input.email);
       const existing = await findUserByUnionId(unionId);
@@ -73,14 +79,29 @@ export const localAuthRouter = createRouter({
           message: "An account with this email already exists — log in instead.",
         });
       }
+      const invite = await getValidInvite(input.code);
+      if (!invite) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Invalid, expired, or fully-used invite code.",
+        });
+      }
       await upsertUser({
         unionId,
         email: input.email.trim().toLowerCase(),
         name: input.name.trim(),
         passwordHash: hashPassword(input.password),
         lastSignInAt: new Date(),
+        plan: invite.plan,
         ...(isOwnerEmail(input.email) ? { role: "admin" as const } : {}),
       });
+      const consumed = await consumeInvite(invite.id);
+      if (!consumed) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "That invite code was just used up — ask for a fresh one.",
+        });
+      }
       await issueSession(ctx, unionId);
       return { ok: true };
     }),

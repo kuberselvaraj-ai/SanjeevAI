@@ -7,6 +7,7 @@ import {
   timestamp,
   bigint,
   int,
+  boolean,
 } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
@@ -49,3 +50,19 @@ export const usageEvents = mysqlTable("usage_events", {
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type InsertUsageEvent = typeof usageEvents.$inferInsert;
+
+
+/** Invite codes — signup requires one; the code decides the granted plan. */
+export const inviteCodes = mysqlTable("invite_codes", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  plan: mysqlEnum("plan", ["free", "pro"]).default("free").notNull(),
+  maxUses: int("maxUses").default(1).notNull(),
+  usedCount: int("usedCount").default(0).notNull(),
+  active: boolean("active").default(true).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InviteCode = typeof inviteCodes.$inferSelect;
+export type InsertInviteCode = typeof inviteCodes.$inferInsert;

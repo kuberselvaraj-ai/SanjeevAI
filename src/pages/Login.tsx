@@ -27,6 +27,7 @@ export default function Login() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -56,7 +57,12 @@ export default function Login() {
     if (mode === "login") {
       loginMutation.mutate({ email, password });
     } else {
-      signupMutation.mutate({ email, password, name: name.trim() || email.split("@")[0] });
+      signupMutation.mutate({
+        email,
+        password,
+        name: name.trim() || email.split("@")[0],
+        code: code.trim(),
+      });
     }
   };
 
@@ -101,6 +107,21 @@ export default function Login() {
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             />
+            {mode === "signup" && (
+              <div>
+                <input
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  placeholder="Invite code (e.g. SANJ-XXXX-XXXX)"
+                  autoComplete="off"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2.5 font-mono-code text-sm uppercase tracking-wider outline-none focus:ring-1 focus:ring-ring"
+                />
+                <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+                  Signup is invite-only for now — ask the owner for a code.
+                </p>
+              </div>
+            )}
             {error && (
               <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
                 {error}
