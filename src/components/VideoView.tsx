@@ -1,7 +1,16 @@
 import { useState } from 'react'
 import { Clapperboard, Download, Loader2, Trash2, AlertCircle, Film } from 'lucide-react'
 import type { Settings, VideoJob } from '@/lib/types'
-import { VIDEO_MODELS, VIDEO_DURATIONS, VIDEO_RESOLUTIONS, createVideoTask } from '@/lib/video'
+import {
+  VIDEO_MODELS,
+  VIDEO_DURATIONS,
+  VIDEO_RESOLUTIONS,
+  H3_DURATIONS,
+  H3_RESOLUTIONS,
+  H3_RATIOS,
+  isH3,
+  createVideoTask,
+} from '@/lib/video'
 import { uid } from '@/lib/storage'
 
 export function VideoView({
@@ -23,11 +32,24 @@ export function VideoView({
   const [model, setModel] = useState(VIDEO_MODELS[0].id)
   const [duration, setDuration] = useState<number>(6)
   const [resolution, setResolution] = useState<string>('768P')
+  const [ratio, setRatio] = useState<string>('16:9')
   const [imageUrl, setImageUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   const noKey = !settings.minimaxKey
+  const h3 = isH3(model)
+
+  const changeModel = (m: string) => {
+    setModel(m)
+    if (isH3(m)) {
+      if (!(H3_DURATIONS as readonly number[]).includes(duration)) setDuration(6)
+      if (!(H3_RESOLUTIONS as readonly string[]).includes(resolution)) setResolution('768P')
+    } else {
+      if (!(VIDEO_DURATIONS as readonly number[]).includes(duration)) setDuration(6)
+      if (!(VIDEO_RESOLUTIONS as readonly string[]).includes(resolution)) setResolution('768P')
+    }
+  }
 
   const submit = async () => {
     if (!prompt.trim() || submitting || noKey) return
@@ -39,6 +61,7 @@ export function VideoView({
         model,
         duration,
         resolution,
+        ratio,
         firstFrameImage: imageUrl.trim() || undefined,
       })
       onCreateJob({
@@ -48,6 +71,7 @@ export function VideoView({
         model,
         duration,
         resolution,
+        ratio,
         status: 'queued',
         createdAt: Date.now(),
       })
@@ -100,7 +124,11 @@ export function VideoView({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
-              placeholder="Describe the video… e.g. A golden retriever running through tall grass at sunset, slow cinematic tracking shot."
+              placeholder={
+                h3
+                  ? 'Describe the video AND its sound… e.g. A barista slides a coffee across the counter and says "One flat white!" — cafe ambience, cup clinks, soft jazz.'
+                  : 'Describe the video… e.g. A golden retriever running through tall grass at sunset, slow cinematic tracking shot.'
+              }
               className="w-full resize-none rounded-xl border border-input bg-background px-3.5 py-3 text-[15px] leading-7 outline-none focus:ring-1 focus:ring-ring"
             />
             <input
@@ -113,12 +141,13 @@ export function VideoView({
             <div className="mt-3 flex flex-wrap items-center gap-2.5">
               <select
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => changeModel(e.target.value)}
                 className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
               >
                 {VIDEO_MODELS.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
+                    {m.badge ? ` · ${m.badge}` : ''}
                   </option>
                 ))}
               </select>
@@ -127,7 +156,7 @@ export function VideoView({
                 onChange={(e) => setDuration(Number(e.target.value))}
                 className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
               >
-                {VIDEO_DURATIONS.map((d) => (
+                {(h3 ? H3_DURATIONS : VIDEO_DURATIONS).map((d) => (
                   <option key={d} value={d}>
                     {d}s
                   </option>
@@ -138,13 +167,27 @@ export function VideoView({
                 onChange={(e) => setResolution(e.target.value)}
                 className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
               >
-                {VIDEO_RESOLUTIONS.map((r) => (
+                {(h3 ? H3_RESOLUTIONS : VIDEO_RESOLUTIONS).map((r) => (
                   <option key={r} value={r} disabled={r === '1080P' && duration === 10}>
                     {r}
                     {r === '1080P' && duration === 10 ? ' (6s only)' : ''}
                   </option>
                 ))}
               </select>
+              {h3 && !imageUrl.trim() && (
+                <select
+                  value={ratio}
+                  onChange={(e) => setRatio(e.target.value)}
+                  className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
+                  title="Aspect ratio"
+                >
+                  {H3_RATIOS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="flex-1" />
               <button
                 onClick={submit}
@@ -155,6 +198,11 @@ export function VideoView({
                 {submitting ? 'Submitting…' : 'Generate'}
               </button>
             </div>
+            <p className="mt-2.5 text-[11px] leading-5 text-muted-foreground/80">
+              {h3
+                ? 'Hailuo 3 generates synchronized stereo sound — dialogue (11 languages, lip-synced), sound effects and ambience. Describe the audio in your prompt. Billed per second (~$0.08/s at 768P, ~$0.13/s at 2K).'
+                : 'Hailuo 2.3 / 02 generate silent video. Switch to Hailuo 3 (H3) for native sound.'}
+            </p>
             {error && (
               <p className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
                 <AlertCircle size={14} className="mt-0.5 shrink-0" />

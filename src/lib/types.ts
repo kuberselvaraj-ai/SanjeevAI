@@ -64,6 +64,7 @@ export interface VideoJob {
   model: string
   duration: number
   resolution: string
+  ratio?: string
   status: VideoStatus
   videoUrl?: string
   error?: string

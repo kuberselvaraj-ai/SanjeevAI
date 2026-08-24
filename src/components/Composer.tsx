@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2 } from 'lucide-react'
 import { KIMI_MODELS, modelLabel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
@@ -36,6 +36,7 @@ export function Composer({
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
   const [modelOpen, setModelOpen] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -55,7 +56,7 @@ export function Composer({
     return () => document.removeEventListener('mousedown', close)
   }, [])
 
-  const addFiles = (list: FileList | null) => {
+  const addFiles = (list: FileList | File[] | null) => {
     if (!list) return
     const incoming = Array.from(list).slice(0, 8 - files.length)
     incoming.forEach((file) => {
@@ -73,6 +74,21 @@ export function Composer({
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  /** Clipboard paste: intercept only when the clipboard carries files
+   *  (screenshots, copied images/files); plain-text paste keeps default behavior. */
+  const handlePaste = (e: ClipboardEvent) => {
+    const pasted = Array.from(e.clipboardData?.files ?? [])
+    if (pasted.length === 0) return
+    e.preventDefault()
+    const renamed = pasted.map((f, i) => {
+      // Pasted images often get a generic "image.png" name — make it unique.
+      if (f.name && f.name !== 'image.png') return f
+      const ext = f.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+      return new File([f], `pasted-${Date.now()}-${i}.${ext}`, { type: f.type })
+    })
+    addFiles(renamed)
+  }
+
   const submit = () => {
     const value = text.trim()
     if ((!value && files.length === 0) || streaming) return
@@ -87,7 +103,23 @@ export function Composer({
   return (
     <div className="px-4 pb-4 pt-2 md:px-8">
       <div className="mx-auto w-full max-w-3xl">
-        <div className="rounded-2xl border border-border bg-card shadow-sm transition-shadow focus-within:shadow-md focus-within:ring-1 focus-within:ring-ring/40">
+        <div
+          className={`rounded-2xl border bg-card shadow-sm transition-shadow focus-within:shadow-md focus-within:ring-1 focus-within:ring-ring/40 ${
+            dragging ? 'border-primary ring-2 ring-primary/40' : 'border-border'
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragging(true)
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false)
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragging(false)
+            addFiles(e.dataTransfer?.files ?? null)
+          }}
+        >
           {/* Attachment chips */}
           {files.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3.5 pt-3">
@@ -128,10 +160,11 @@ export function Composer({
                 submit()
               }
             }}
+            onPaste={handlePaste}
             placeholder={
               disabled
                 ? 'Add your Kimi API key in Settings to start…'
-                : 'Message Sanjeev AI — attach docs or images with the paperclip…'
+                : 'Message Sanjeev AI — paste, drop, or attach docs & images…'
             }
             rows={1}
             className="max-h-[220px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-7 outline-none placeholder:text-muted-foreground/70"
@@ -273,7 +306,8 @@ export function Composer({
           </div>
         </div>
         <p className="mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] text-muted-foreground/70">
-          Enter to send · Shift + Enter for a new line · PDF, Word, Excel, PPT, text & images
+          Enter to send · Shift + Enter for a new line · paste or drop files · PDF, Word, Excel,
+          PPT, text & images
           {streaming && <Loader2 size={11} className="animate-spin" />}
         </p>
       </div>

@@ -302,7 +302,7 @@ export default function Home() {
       for (const job of videos) {
         if (job.status !== 'queued' && job.status !== 'processing') continue
         try {
-          const result = await pollVideoTask(settings, job.taskId)
+          const result = await pollVideoTask(settings, job.taskId, job.model)
           if (result.state === 'pending') {
             setVideos((prev) =>
               prev.map((v) => (v.id === job.id ? { ...v, status: 'processing' } : v)),
