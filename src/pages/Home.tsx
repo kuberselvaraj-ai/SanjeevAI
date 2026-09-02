@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { KeyRound } from 'lucide-react'
-import type { Attachment, Conversation, Settings, VideoJob } from '@/lib/types'
+import type { Attachment, Conversation, ImageJob, Settings, VideoJob } from '@/lib/types'
 import { store, uid } from '@/lib/storage'
 import { streamChat, type ApiMessage, type MessagePart } from '@/lib/kimi'
 import { pollVideoTask } from '@/lib/video'
@@ -15,6 +15,7 @@ import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { VideoView } from '@/components/VideoView'
+import { ImageView } from '@/components/ImageView'
 import { WorkspaceDialog, type WorkspaceSelection } from '@/components/WorkspaceDialog'
 
 export default function Home() {
@@ -43,6 +44,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [videos, setVideos] = useState<VideoJob[]>(() => store.loadVideos())
+  const [images, setImages] = useState<ImageJob[]>(() => store.loadImages())
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
 
@@ -52,6 +54,7 @@ export default function Home() {
   useEffect(() => store.saveSettings(settings), [settings])
   useEffect(() => store.saveConversations(conversations), [conversations])
   useEffect(() => store.saveVideos(videos), [videos])
+  useEffect(() => store.saveImages(images), [images])
 
   // ----- theme -----
   useEffect(() => {
@@ -406,7 +409,7 @@ export default function Home() {
       ? `${usage.planLabel} · unlimited (admin)`
       : `${usage.planLabel} · ${Math.round(usage.used.tokens / 1000)}K / ${Math.round(
           usage.limits.monthlyTokens / 1000,
-        )}K tokens · ${usage.used.videos} / ${usage.limits.monthlyVideos} videos`
+        )}K tokens · ${usage.used.videos}/${usage.limits.monthlyVideos} vids · ${usage.used.images}/${usage.limits.monthlyImages} imgs`
     : null
 
   return (
@@ -432,7 +435,20 @@ export default function Home() {
         onLogout={logout}
       />
 
-      {view === 'chat' ? (
+      {view === 'image' ? (
+        <ImageView
+          settings={settings}
+          hosted={hosted}
+          jobs={images}
+          onCreateJob={(job) => setImages((prev) => [job, ...prev])}
+          onUpdateJob={(id, patch) =>
+            setImages((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)))
+          }
+          onDeleteJob={(id) => setImages((prev) => prev.filter((j) => j.id !== id))}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+      ) : view === 'chat' ? (
         <div className="flex h-full min-w-0 flex-1 flex-col">
           <ChatView
             conversation={active}

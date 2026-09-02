@@ -15,8 +15,8 @@ export const Paths = {
 
 /** Monthly usage allowances per plan. Admin role bypasses these entirely. */
 export const PLANS = {
-  free: { label: "Free", monthlyTokens: 500_000, monthlyVideos: 3 },
-  pro: { label: "Pro", monthlyTokens: 8_000_000, monthlyVideos: 30 },
+  free: { label: "Free", monthlyTokens: 500_000, monthlyVideos: 3, monthlyImages: 10 },
+  pro: { label: "Pro", monthlyTokens: 8_000_000, monthlyVideos: 30, monthlyImages: 100 },
 } as const;
 
 export type PlanId = keyof typeof PLANS;

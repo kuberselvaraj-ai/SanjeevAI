@@ -1,4 +1,4 @@
-import type { Conversation, Settings, VideoJob } from './types'
+import type { Conversation, ImageJob, Settings, VideoJob } from './types'
 import { DEFAULT_MODEL } from './models'
 import { BUNDLED_MOONSHOT_KEY } from './bundled-config'
 
@@ -6,11 +6,14 @@ const KEYS = {
   settings: 'kimi-studio:settings',
   conversations: 'kimi-studio:conversations',
   videos: 'kimi-studio:videos',
+  images: 'kimi-studio:images',
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   moonshotKey: '',
   minimaxKey: '',
+  openaiKey: '',
+  geminiKey: '',
   moonshotBaseUrl: 'https://api.moonshot.ai/v1',
   minimaxBaseUrl: 'https://api.minimax.io/v1',
   temperature: 0.6,
@@ -60,6 +63,10 @@ export const store = {
   saveConversations: (c: Conversation[]) => write(KEYS.conversations, c),
   loadVideos: (): VideoJob[] => readArray<VideoJob>(KEYS.videos),
   saveVideos: (v: VideoJob[]) => write(KEYS.videos, v),
+  // Images are data URLs (~1–3 MB each) — keep only the newest few so
+  // localStorage doesn't overflow.
+  loadImages: (): ImageJob[] => readArray<ImageJob>(KEYS.images),
+  saveImages: (v: ImageJob[]) => write(KEYS.images, v.slice(0, 8)),
 }
 
 export function uid(): string {

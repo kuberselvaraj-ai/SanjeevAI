@@ -21,6 +21,7 @@ export async function getMonthUsage(userId: number) {
     .select({
       tokens: sql<number>`COALESCE(SUM(${schema.usageEvents.inputTokens} + ${schema.usageEvents.outputTokens}), 0)`,
       videos: sql<number>`COALESCE(SUM(${schema.usageEvents.videoCount}), 0)`,
+      images: sql<number>`COALESCE(SUM(${schema.usageEvents.imageCount}), 0)`,
     })
     .from(schema.usageEvents)
     .where(
@@ -30,7 +31,11 @@ export async function getMonthUsage(userId: number) {
       ),
     );
   const r = rows.at(0);
-  return { tokens: Number(r?.tokens ?? 0), videos: Number(r?.videos ?? 0) };
+  return {
+    tokens: Number(r?.tokens ?? 0),
+    videos: Number(r?.videos ?? 0),
+    images: Number(r?.images ?? 0),
+  };
 }
 
 /** All users plus their current-month usage. Never expose passwordHash. */
@@ -41,6 +46,7 @@ export async function listUsersWithUsage() {
       userId: schema.usageEvents.userId,
       tokens: sql<number>`COALESCE(SUM(${schema.usageEvents.inputTokens} + ${schema.usageEvents.outputTokens}), 0)`,
       videos: sql<number>`COALESCE(SUM(${schema.usageEvents.videoCount}), 0)`,
+      images: sql<number>`COALESCE(SUM(${schema.usageEvents.imageCount}), 0)`,
     })
     .from(schema.usageEvents)
     .where(gte(schema.usageEvents.createdAt, monthStart()))
@@ -52,6 +58,7 @@ export async function listUsersWithUsage() {
       ...rest,
       monthTokens: Number(byUser.get(u.id)?.tokens ?? 0),
       monthVideos: Number(byUser.get(u.id)?.videos ?? 0),
+      monthImages: Number(byUser.get(u.id)?.images ?? 0),
     };
   });
 }

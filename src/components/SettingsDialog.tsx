@@ -107,6 +107,24 @@ export function SettingsDialog({
                 helpUrl="https://platform.minimax.io/"
                 helpText="Get a key at platform.minimax.io"
               />
+
+              <SecretField
+                label="OpenAI API key (GPT Image 2 — image studio)"
+                value={draft.openaiKey}
+                onChange={(v) => set('openaiKey', v)}
+                placeholder="sk-..."
+                helpUrl="https://platform.openai.com/api-keys"
+                helpText="Get a key at platform.openai.com"
+              />
+
+              <SecretField
+                label="Google AI Studio key (Nano Banana 2 — image studio)"
+                value={draft.geminiKey}
+                onChange={(v) => set('geminiKey', v)}
+                placeholder="AIza..."
+                helpUrl="https://aistudio.google.com/apikey"
+                helpText="Get a key at aistudio.google.com"
+              />
             </>
           )}
 

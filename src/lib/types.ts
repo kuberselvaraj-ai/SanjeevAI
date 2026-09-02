@@ -44,6 +44,10 @@ export interface Conversation {
 export interface Settings {
   moonshotKey: string
   minimaxKey: string
+  /** OpenAI key — GPT Image 2 (Image Studio, desktop mode) */
+  openaiKey: string
+  /** Google AI Studio key — Nano Banana 2 (Image Studio, desktop mode) */
+  geminiKey: string
   /** defaults to https://api.moonshot.ai/v1 */
   moonshotBaseUrl: string
   /** defaults to https://api.minimax.io/v1 */
@@ -67,6 +71,21 @@ export interface VideoJob {
   ratio?: string
   status: VideoStatus
   videoUrl?: string
+  error?: string
+  createdAt: number
+}
+
+export type ImageStatus = 'generating' | 'done' | 'failed'
+
+export interface ImageJob {
+  id: string
+  prompt: string
+  model: string
+  /** human label, e.g. "1024×1024 · high" or "16:9 · 1K" */
+  detail: string
+  status: ImageStatus
+  /** data URL of the finished image */
+  imageUrl?: string
   error?: string
   createdAt: number
 }

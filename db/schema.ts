@@ -39,11 +39,12 @@ export const usageEvents = mysqlTable("usage_events", {
   userId: bigint("userId", { mode: "number", unsigned: true })
     .notNull()
     .references(() => users.id),
-  kind: mysqlEnum("kind", ["chat", "video"]).notNull(),
+  kind: mysqlEnum("kind", ["chat", "video", "image"]).notNull(),
   model: varchar("model", { length: 100 }),
   inputTokens: int("inputTokens").default(0).notNull(),
   outputTokens: int("outputTokens").default(0).notNull(),
   videoCount: int("videoCount").default(0).notNull(),
+  imageCount: int("imageCount").default(0).notNull(),
   note: varchar("note", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

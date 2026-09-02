@@ -1,9 +1,9 @@
-import { MessageSquare, Plus, Settings, Trash2, Clapperboard, Moon, Sun, X, LogOut, ShieldCheck } from 'lucide-react'
+import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router'
 import type { Conversation } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
 
-export type View = 'chat' | 'video'
+export type View = 'chat' | 'video' | 'image'
 
 export interface SidebarUser {
   name?: string | null
@@ -94,6 +94,7 @@ export function Sidebar({
           {(
             [
               { id: 'chat', label: 'Chat', icon: MessageSquare },
+              { id: 'image', label: 'Images', icon: ImageIcon },
               { id: 'video', label: 'Video', icon: Clapperboard },
             ] as const
           ).map((tab) => (
