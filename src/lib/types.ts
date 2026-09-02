@@ -54,6 +54,8 @@ export interface Settings {
   openaiKey: string
   /** Google AI Studio key — Nano Banana 2 (Image Studio, desktop mode) */
   geminiKey: string
+  /** E2B key — run Python code from chat (desktop mode) */
+  e2bKey: string
   /** defaults to https://api.moonshot.ai/v1 */
   moonshotBaseUrl: string
   /** defaults to https://api.minimax.io/v1 */
@@ -63,6 +65,8 @@ export interface Settings {
   defaultModel: string
   /** enable Kimi's built-in $web_search tool (billed per search call) */
   webSearch: boolean
+  /** deep research mode — forces web search + cited report structure */
+  deepResearch: boolean
 }
 
 export type VideoStatus = 'queued' | 'processing' | 'success' | 'failed'

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { KeyRound } from 'lucide-react'
 import type { Attachment, ChatMessage, Conversation, ImageJob, Settings, VideoJob } from '@/lib/types'
 import { store, uid } from '@/lib/storage'
@@ -9,11 +10,14 @@ import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
 import { DEFAULT_SYSTEM_PROMPT } from '@/lib/models'
 import { styleInstruction } from '@/lib/styles'
+import { RESEARCH_PROMPT } from '@/lib/research'
+import { memoryContext } from '@/lib/memory'
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
 import { Sidebar, type View } from '@/components/Sidebar'
 import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
+import { speakText, transcribeAudio, voiceAvailable } from '@/lib/voice'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { VideoView } from '@/components/VideoView'
 import { ImageView } from '@/components/ImageView'
@@ -36,6 +40,15 @@ export default function Home() {
     enabled: hosted && !!user,
     retry: false,
   })
+  const runCodeMutation = trpc.code.run.useMutation()
+
+  // Hosted runs code on the server; desktop runs it with the user's own E2B key.
+  const runCode = async (code: string): Promise<CodeRunResult> => {
+    if (hosted) {
+      return await runCodeMutation.mutateAsync({ code, language: 'python' })
+    }
+    return runCodeDirect(settings, code)
+  }
 
   const [settings, setSettings] = useState<Settings>(() => store.loadSettings())
   const [conversations, setConversations] = useState<Conversation[]>(() =>
@@ -143,10 +156,12 @@ export default function Home() {
         Intl.DateTimeFormat().resolvedOptions().timeZone
       }). Use this when the user asks about "today", "now", deadlines, or recency.`
       const style = styleInstruction(conv.style)
+      const memory = memoryContext()
+      const research = settings.deepResearch ? `\n\n${RESEARCH_PROMPT}` : ''
       const out: ApiMessage[] = [
         {
           role: 'system',
-          content: `${conv.systemPrompt}${style ? `\n\n${style}` : ''}\n\n${timeLine}`,
+          content: `${conv.systemPrompt}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}\n\n${timeLine}`,
         },
       ]
       for (const m of messages) {
@@ -176,7 +191,7 @@ export default function Home() {
       }
       return out
     },
-    [],
+    [settings.deepResearch],
   )
 
   /** Stream an assistant reply into an existing placeholder message. */
@@ -239,13 +254,19 @@ export default function Home() {
             model: conv.model,
             messages: apiMessages,
             temperature: settings.temperature,
-            webSearch: settings.webSearch,
+            webSearch: settings.webSearch || settings.deepResearch,
           },
           callbacks,
           controller.signal,
         )
       } else {
-        streamChat(settings, conv.model, apiMessages, callbacks, controller.signal)
+        streamChat(
+          { ...settings, webSearch: settings.webSearch || settings.deepResearch },
+          conv.model,
+          apiMessages,
+          callbacks,
+          controller.signal,
+        )
       }
     },
     [buildApiMessages, hosted, settings, trpcUtils, updateConversation],
@@ -478,6 +499,29 @@ export default function Home() {
     URL.revokeObjectURL(url)
   }, [active])
 
+  // ----- share link (hosted only — needs the server DB) -----
+  const shareMutation = trpc.share.create.useMutation()
+  const shareChat = useCallback(async () => {
+    if (!active || active.messages.length === 0) return
+    const messages = active.messages
+      .filter(
+        (m): m is ChatMessage & { role: 'user' | 'assistant' } =>
+          (m.role === 'user' || m.role === 'assistant') &&
+          !m.error &&
+          !m.streaming &&
+          Boolean(m.content),
+      )
+      .map((m) => ({ role: m.role, content: m.content, model: m.model }))
+    if (messages.length === 0) return
+    const { slug } = await shareMutation.mutateAsync({
+      title: active.title || 'Sanjeev AI conversation',
+      messages,
+    })
+    const url = `${window.location.origin}${window.location.pathname}#/share/${slug}`
+    await navigator.clipboard.writeText(url)
+    toast.success('Share link copied to clipboard', { description: url })
+  }, [active, shareMutation.mutateAsync])
+
   // ----- keyboard shortcuts -----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -613,9 +657,16 @@ export default function Home() {
               onOpenSidebar={() => setSidebarOpen(true)}
               onRegenerate={regenerate}
               onEditMessage={editMessage}
+              onSpeak={
+                voiceAvailable(settings, hosted)
+                  ? (text) => speakText(settings, text, hosted).catch(() => {})
+                  : undefined
+              }
+              onRunCode={runCode}
               onPreview={(code, language) => setArtifact({ code, language })}
               onOpenSearch={() => setSearchOpen(true)}
               onExport={exportChat}
+              onShare={hosted ? shareChat : undefined}
               onToggleTemp={toggleTemp}
               onStyleChange={setStyle}
               headerExtra={
@@ -646,6 +697,15 @@ export default function Home() {
                 workspace ? { label: workspace.rootLabel, count: workspace.files.length } : null
               }
               onClearWorkspace={() => setWorkspace(null)}
+              deepResearch={settings.deepResearch}
+              onToggleDeepResearch={() =>
+                setSettings((s) => ({ ...s, deepResearch: !s.deepResearch }))
+              }
+              voice={
+                voiceAvailable(settings, hosted)
+                  ? { transcribe: (blob: Blob) => transcribeAudio(settings, blob, hosted) }
+                  : null
+              }
             />
           </div>
           {artifact && (

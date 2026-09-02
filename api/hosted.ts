@@ -177,4 +177,96 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       return c.json({ error: (e as Error).message }, 502);
     }
   });
+
+  // ── Voice input: Whisper transcription ─────────────────────────────────
+  app.post("/api/hosted/transcribe", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in to use Sanjeev AI." }, 401);
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      return c.json(
+        { error: "Voice input is not configured yet (missing OpenAI key on the server)." },
+        503,
+      );
+    }
+    const form = await c.req.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!(file instanceof File)) {
+      return c.json({ error: "audio file is required" }, 400);
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      return c.json({ error: "Audio too large (25 MB max)." }, 413);
+    }
+    const out = new FormData();
+    out.append("model", "whisper-1");
+    out.append("file", file, file.name || "audio.webm");
+    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: out,
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      text?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok || data.text === undefined) {
+      return c.json({ error: data.error?.message || `OpenAI API error ${res.status}` }, 502);
+    }
+    // Rough metering: ~1 token per 20KB of audio
+    await recordUsage({
+      userId: user.id,
+      kind: "chat",
+      model: "whisper-1",
+      inputTokens: Math.ceil(file.size / 20000),
+      outputTokens: 0,
+      videoCount: 0,
+    }).catch(() => {});
+    return c.json({ text: data.text });
+  });
+
+  // ── Read aloud: OpenAI TTS ─────────────────────────────────────────────
+  app.post("/api/hosted/tts", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in to use Sanjeev AI." }, 401);
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      return c.json(
+        { error: "Read aloud is not configured yet (missing OpenAI key on the server)." },
+        503,
+      );
+    }
+    const body = (await c.req.json().catch(() => null)) as { text?: string } | null;
+    const text = body?.text?.slice(0, 4000);
+    if (!text) return c.json({ error: "text is required" }, 400);
+
+    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
+    });
+    if (!res.ok || !res.body) {
+      const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+      return c.json({ error: j.error?.message || `OpenAI API error ${res.status}` }, 502);
+    }
+    await recordUsage({
+      userId: user.id,
+      kind: "chat",
+      model: "tts-1",
+      inputTokens: 0,
+      outputTokens: Math.ceil(text.length / 4),
+      videoCount: 0,
+    }).catch(() => {});
+    return new Response(res.body, {
+      headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+    });
+  });
 }

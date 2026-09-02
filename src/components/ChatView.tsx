@@ -10,8 +10,11 @@ import {
   Ghost,
   ChevronDown,
   Wand2,
+  Share2,
+  Check,
 } from 'lucide-react'
 import type { Conversation } from '@/lib/types'
+import type { CodeRunResult } from '@/lib/code'
 import { STYLE_PRESETS } from '@/lib/styles'
 import { MessageItem } from './MessageItem'
 
@@ -46,9 +49,12 @@ export function ChatView({
   headerExtra,
   onRegenerate,
   onEditMessage,
+  onSpeak,
+  onRunCode,
   onPreview,
   onOpenSearch,
   onExport,
+  onShare,
   onToggleTemp,
   onStyleChange,
 }: {
@@ -59,16 +65,28 @@ export function ChatView({
   headerExtra?: React.ReactNode
   onRegenerate: () => void
   onEditMessage: (id: string, text: string) => void
+  onSpeak?: (text: string) => void
+  onRunCode?: (code: string) => Promise<CodeRunResult>
   onPreview: (code: string, language: string) => void
   onOpenSearch: () => void
   onExport: () => void
+  /** Hosted mode only — publishes a read-only snapshot and copies the link. */
+  onShare?: () => Promise<void>
   onToggleTemp: () => void
   onStyleChange: (styleId: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleOpen, setStyleOpen] = useState(false)
+  const [shared, setShared] = useState(false)
   const styleRef = useRef<HTMLDivElement>(null)
   const messages = conversation?.messages ?? []
+
+  const share = async () => {
+    if (!onShare) return
+    await onShare()
+    setShared(true)
+    setTimeout(() => setShared(false), 2000)
+  }
 
   useEffect(() => {
     const el = scrollRef.current
@@ -165,6 +183,15 @@ export function ChatView({
             <Download size={15} />
           </button>
         )}
+        {conversation && !empty && onShare && (
+          <button
+            onClick={share}
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Create a public share link"
+          >
+            {shared ? <Check size={15} className="text-primary" /> : <Share2 size={15} />}
+          </button>
+        )}
         <button
           onClick={onOpenSearch}
           className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -220,6 +247,8 @@ export function ChatView({
                 isLast={m.id === lastAssistantId}
                 onRegenerate={onRegenerate}
                 onEdit={onEditMessage}
+                onSpeak={onSpeak}
+                onRunCode={onRunCode}
                 onPreview={onPreview}
               />
             ))}

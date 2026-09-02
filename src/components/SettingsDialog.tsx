@@ -65,8 +65,14 @@ export function SettingsDialog({
   onClose: () => void
 }) {
   const [draft, setDraft] = useState<Settings>({ ...settings })
+  const [memories, setMemories] = useState<string[]>(() => loadMemories())
+  const [newMemory, setNewMemory] = useState('')
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setDraft((d) => ({ ...d, [k]: v }))
+  const updateMemories = (list: string[]) => {
+    setMemories(list)
+    saveMemories(list)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -125,6 +131,15 @@ export function SettingsDialog({
                 helpUrl="https://aistudio.google.com/apikey"
                 helpText="Get a key at aistudio.google.com"
               />
+
+              <SecretField
+                label="E2B API key (run Python from chat)"
+                value={draft.e2bKey}
+                onChange={(v) => set('e2bKey', v)}
+                placeholder="e2b_..."
+                helpUrl="https://e2b.dev/dashboard"
+                helpText="Get a key at e2b.dev (free tier)"
+              />
             </>
           )}
 
@@ -162,6 +177,61 @@ export function SettingsDialog({
               onChange={(e) => set('temperature', parseFloat(e.target.value))}
               className="w-full accent-[hsl(var(--primary))]"
             />
+          </div>
+
+          {/* Memory — works in both desktop and hosted mode */}
+          <div className="rounded-lg border border-border">
+            <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] font-medium">
+              <Brain size={14} className="text-primary" />
+              Memory
+              <span className="text-xs font-normal text-muted-foreground">
+                — remembered across all chats
+              </span>
+            </div>
+            <div className="space-y-2 border-t border-border px-3 py-3">
+              {memories.length === 0 && (
+                <p className="text-[12px] leading-5 text-muted-foreground">
+                  Nothing saved yet. Hover any reply and hit “Remember”, or add a fact below
+                  (e.g. “I'm vegetarian”, “My project uses Postgres”).
+                </p>
+              )}
+              {memories.map((m, i) => (
+                <div key={i} className="flex items-start gap-2 rounded-lg bg-muted px-2.5 py-2">
+                  <p className="flex-1 text-[12.5px] leading-5">{m}</p>
+                  <button
+                    onClick={() => updateMemories(memories.filter((_, j) => j !== i))}
+                    className="mt-0.5 shrink-0 text-muted-foreground hover:text-destructive"
+                    title="Forget this"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <input
+                  value={newMemory}
+                  onChange={(e) => setNewMemory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newMemory.trim()) {
+                      updateMemories([newMemory.trim(), ...memories])
+                      setNewMemory('')
+                    }
+                  }}
+                  placeholder="Add something to remember…"
+                  className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-ring"
+                />
+                <button
+                  onClick={() => {
+                    if (!newMemory.trim()) return
+                    updateMemories([newMemory.trim(), ...memories])
+                    setNewMemory('')
+                  }}
+                  className="rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground hover:opacity-90"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
           </div>
 
           {!hosted && (

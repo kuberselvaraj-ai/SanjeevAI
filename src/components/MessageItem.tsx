@@ -17,10 +17,16 @@ import {
   RefreshCw,
   Pencil,
   Play,
+  BookmarkPlus,
+  Volume2,
+  Terminal,
+  Loader2,
 } from 'lucide-react'
+import type { CodeRunResult } from '@/lib/code'
 import type { Attachment, ChatMessage } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
 import { formatSize } from '@/lib/files'
+import { addMemory } from '@/lib/memory'
 
 function AttachmentChip({ attachment }: { attachment: Attachment }) {
   if (attachment.kind === 'image' && attachment.dataUrl) {
@@ -64,24 +70,54 @@ function CodeBlock({
   code,
   dark,
   onPreview,
+  onRunCode,
 }: {
   language: string
   code: string
   dark: boolean
   onPreview?: (code: string, language: string) => void
+  onRunCode?: (code: string) => Promise<CodeRunResult>
 }) {
   const [copied, setCopied] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [output, setOutput] = useState<CodeRunResult | null>(null)
+  const [runError, setRunError] = useState('')
   const copy = async () => {
     await navigator.clipboard.writeText(code)
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  const run = async () => {
+    if (!onRunCode || running) return
+    setRunning(true)
+    setRunError('')
+    setOutput(null)
+    try {
+      setOutput(await onRunCode(code))
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : 'Code execution failed.')
+    } finally {
+      setRunning(false)
+    }
+  }
   const previewable = PREVIEWABLE.has(language.toLowerCase())
+  const runnable = onRunCode && ['python', 'py'].includes(language.toLowerCase())
   return (
     <div className="group/code my-3 overflow-hidden rounded-xl border border-border bg-[#282c34] text-sm">
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
         <span className="font-mono-code text-xs text-white/50">{language || 'text'}</span>
         <span className="flex items-center gap-1.5">
+          {runnable && (
+            <button
+              onClick={run}
+              disabled={running}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white/50 transition-colors hover:text-white disabled:opacity-50"
+              title="Run in a Python sandbox"
+            >
+              {running ? <Loader2 size={12} className="animate-spin" /> : <Terminal size={12} />}
+              {running ? 'Running…' : 'Run'}
+            </button>
+          )}
           {previewable && onPreview && (
             <button
               onClick={() => onPreview(code, language.toLowerCase())}
@@ -115,6 +151,31 @@ function CodeBlock({
       >
         {code}
       </SyntaxHighlighter>
+      {(output || runError) && (
+        <div className="border-t border-white/10 bg-black/30 px-3 py-2.5">
+          <p className="mb-1 font-mono-code text-[10px] uppercase tracking-wide text-white/40">
+            Output
+          </p>
+          {runError && <pre className="whitespace-pre-wrap font-mono-code text-xs text-red-400">{runError}</pre>}
+          {output?.stdout && (
+            <pre className="whitespace-pre-wrap font-mono-code text-xs text-emerald-300">{output.stdout}</pre>
+          )}
+          {output?.results.map((r, i) => (
+            <pre key={i} className="whitespace-pre-wrap font-mono-code text-xs text-white/80">{r}</pre>
+          ))}
+          {output?.stderr && (
+            <pre className="whitespace-pre-wrap font-mono-code text-xs text-amber-400">{output.stderr}</pre>
+          )}
+          {output?.error && (
+            <pre className="whitespace-pre-wrap font-mono-code text-xs text-red-400">
+              {output.error.name}: {output.error.value}
+            </pre>
+          )}
+          {output && !output.stdout && !output.stderr && !output.error && output.results.length === 0 && (
+            <p className="font-mono-code text-xs text-white/40">(no output)</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -123,10 +184,12 @@ export function Markdown({
   text,
   dark,
   onPreview,
+  onRunCode,
 }: {
   text: string
   dark: boolean
   onPreview?: (code: string, language: string) => void
+  onRunCode?: (code: string) => Promise<CodeRunResult>
 }) {
   return (
     <ReactMarkdown
@@ -147,7 +210,13 @@ export function Markdown({
             )
           }
           return (
-            <CodeBlock language={match?.[1] ?? ''} code={code} dark={dark} onPreview={onPreview} />
+            <CodeBlock
+              language={match?.[1] ?? ''}
+              code={code}
+              dark={dark}
+              onPreview={onPreview}
+              onRunCode={onRunCode}
+            />
           )
         },
         p: ({ children }) => <p className="my-2.5 leading-7 first:mt-0 last:mb-0">{children}</p>,
@@ -235,7 +304,9 @@ export const MessageItem = memo(function MessageItem({
   isLast = false,
   onRegenerate,
   onEdit,
+  onSpeak,
   onPreview,
+  onRunCode,
 }: {
   message: ChatMessage
   dark: boolean
@@ -243,11 +314,20 @@ export const MessageItem = memo(function MessageItem({
   isLast?: boolean
   onRegenerate?: () => void
   onEdit?: (id: string, text: string) => void
+  onSpeak?: (text: string) => void
   onPreview?: (code: string, language: string) => void
+  onRunCode?: (code: string) => Promise<CodeRunResult>
 }) {
   const { copied, copy } = useCopy(message.content)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
+  const [remembered, setRemembered] = useState(false)
+  const remember = () => {
+    // Save a compact snippet — full answers belong in the chat, facts in memory.
+    addMemory(message.content.replace(/\s+/g, ' ').slice(0, 300))
+    setRemembered(true)
+    setTimeout(() => setRemembered(false), 1500)
+  }
 
   if (message.role === 'user') {
     return (
@@ -358,7 +438,12 @@ export const MessageItem = memo(function MessageItem({
           <div className={message.streaming && !message.content ? 'stream-cursor' : ''}>
             {message.content ? (
               <div className={message.streaming ? 'stream-cursor' : ''}>
-                <Markdown text={message.content} dark={dark} onPreview={onPreview} />
+                <Markdown
+                  text={message.content}
+                  dark={dark}
+                  onPreview={onPreview}
+                  onRunCode={onRunCode}
+                />
               </div>
             ) : (
               <span className="text-sm text-muted-foreground">
@@ -387,6 +472,24 @@ export const MessageItem = memo(function MessageItem({
               >
                 <RefreshCw size={13} />
                 Regenerate
+              </button>
+            )}
+            <button
+              onClick={remember}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Save to memory (remembered across chats)"
+            >
+              {remembered ? <Check size={13} /> : <BookmarkPlus size={13} />}
+              {remembered ? 'Saved' : 'Remember'}
+            </button>
+            {onSpeak && (
+              <button
+                onClick={() => onSpeak(message.content)}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Read aloud"
+              >
+                <Volume2 size={13} />
+                Listen
               </button>
             )}
           </div>

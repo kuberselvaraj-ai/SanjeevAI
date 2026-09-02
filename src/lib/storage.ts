@@ -14,12 +14,14 @@ export const DEFAULT_SETTINGS: Settings = {
   minimaxKey: '',
   openaiKey: '',
   geminiKey: '',
+  e2bKey: '',
   moonshotBaseUrl: 'https://api.moonshot.ai/v1',
   minimaxBaseUrl: 'https://api.minimax.io/v1',
   temperature: 0.6,
   theme: 'light',
   defaultModel: DEFAULT_MODEL,
   webSearch: false,
+  deepResearch: false,
 }
 
 function read<T>(key: string, fallback: T): T {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
-import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2 } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic } from 'lucide-react'
 import { KIMI_MODELS, modelLabel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
 
@@ -20,6 +20,9 @@ export function Composer({
   onOpenWorkspace,
   workspaceSummary,
   onClearWorkspace,
+  deepResearch,
+  onToggleDeepResearch,
+  voice,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -32,11 +35,59 @@ export function Composer({
   onOpenWorkspace: () => void
   workspaceSummary: { label: string; count: number } | null
   onClearWorkspace: () => void
+  deepResearch: boolean
+  onToggleDeepResearch: () => void
+  /** Voice input (Whisper). Null = not configured. */
+  voice: { transcribe: (blob: Blob) => Promise<string> } | null
 }) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
   const [modelOpen, setModelOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
+  const recRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+
+  const toggleRecording = async () => {
+    if (!voice) return
+    setVoiceError('')
+    if (recording) {
+      recRef.current?.stop()
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const rec = new MediaRecorder(stream)
+      chunksRef.current = []
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop())
+        setRecording(false)
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' })
+        if (blob.size < 1000) return // too short — ignore
+        setTranscribing(true)
+        try {
+          const spoken = await voice.transcribe(blob)
+          setText((t) => (t ? `${t.trimEnd()} ${spoken}` : spoken))
+        } catch (e) {
+          setVoiceError((e as Error).message)
+          setTimeout(() => setVoiceError(''), 5000)
+        } finally {
+          setTranscribing(false)
+        }
+      }
+      recRef.current = rec
+      rec.start()
+      setRecording(true)
+    } catch {
+      setVoiceError('Microphone access denied')
+      setTimeout(() => setVoiceError(''), 5000)
+    }
+  }
   const taRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -192,9 +243,9 @@ export function Composer({
               {/* Web search toggle */}
               <button
                 onClick={onToggleWebSearch}
-                disabled={disabled}
+                disabled={disabled || deepResearch}
                 className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
-                  webSearch
+                  webSearch || deepResearch
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
@@ -206,6 +257,25 @@ export function Composer({
               >
                 <Globe size={15} />
                 {webSearch && <span className="hidden sm:inline">Search</span>}
+              </button>
+
+              {/* Deep research toggle */}
+              <button
+                onClick={onToggleDeepResearch}
+                disabled={disabled}
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
+                  deepResearch
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
+                title={
+                  deepResearch
+                    ? 'Deep research ON — searches multiple sources and writes a cited report'
+                    : 'Deep research — multi-source search + structured cited report'
+                }
+              >
+                <Telescope size={15} />
+                {deepResearch && <span className="hidden sm:inline">Research</span>}
               </button>
 
               {/* Code workspace */}
@@ -282,6 +352,29 @@ export function Composer({
                   </div>
                 )}
               </div>
+
+              {/* Voice input */}
+              {voice && (
+                <button
+                  onClick={toggleRecording}
+                  disabled={disabled || transcribing}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
+                    recording
+                      ? 'animate-pulse bg-destructive/15 text-destructive'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                  title={
+                    recording
+                      ? 'Stop recording & transcribe'
+                      : transcribing
+                        ? 'Transcribing…'
+                        : 'Voice input (speak, then click again to transcribe)'
+                  }
+                >
+                  {transcribing ? <Loader2 size={15} className="animate-spin" /> : <Mic size={15} />}
+                  {recording && <span className="hidden sm:inline">Stop</span>}
+                </button>
+              )}
             </div>
 
             {/* Send / Stop */}

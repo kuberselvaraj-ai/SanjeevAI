@@ -67,3 +67,19 @@ export const inviteCodes = mysqlTable("invite_codes", {
 
 export type InviteCode = typeof inviteCodes.$inferSelect;
 export type InsertInviteCode = typeof inviteCodes.$inferInsert;
+
+/** Public read-only snapshots of a conversation, reachable at /share/<slug>. */
+export const shareLinks = mysqlTable("share_links", {
+  id: serial("id").primaryKey(),
+  slug: varchar("slug", { length: 24 }).notNull().unique(),
+  userId: bigint("userId", { mode: "number", unsigned: true })
+    .notNull()
+    .references(() => users.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  /** JSON-serialized message list (text only — attachments are stripped). */
+  snapshot: text("snapshot").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ShareLink = typeof shareLinks.$inferSelect;
+export type InsertShareLink = typeof shareLinks.$inferInsert;
