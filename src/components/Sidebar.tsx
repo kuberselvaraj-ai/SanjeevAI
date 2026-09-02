@@ -1,4 +1,5 @@
-import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck } from 'lucide-react'
+import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router'
 import type { Conversation } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
@@ -19,6 +20,9 @@ export function Sidebar({
   onSelect,
   onNew,
   onDelete,
+  onRename,
+  onTogglePin,
+  onOpenSearch,
   onOpenSettings,
   theme,
   onToggleTheme,
@@ -36,6 +40,9 @@ export function Sidebar({
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
+  onRename: (id: string, title: string) => void
+  onTogglePin: (id: string) => void
+  onOpenSearch: () => void
   onOpenSettings: () => void
   theme: 'light' | 'dark'
   onToggleTheme: () => void
@@ -46,6 +53,16 @@ export function Sidebar({
   usageSummary?: string | null
   onLogout?: () => void
 }) {
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const sorted = [...conversations].sort(
+    (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updatedAt - a.updatedAt,
+  )
+  const commitRename = () => {
+    const v = renameDraft.trim()
+    if (renamingId && v) onRename(renamingId, v)
+    setRenamingId(null)
+  }
   return (
     <>
       {/* mobile scrim */}
@@ -86,6 +103,14 @@ export function Sidebar({
           >
             <Plus size={16} strokeWidth={2.5} />
             New chat
+          </button>
+          <button
+            onClick={onOpenSearch}
+            className="mt-2 flex w-full items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+          >
+            <Search size={14} />
+            <span className="flex-1 text-left">Search chats</span>
+            <kbd className="rounded border border-sidebar-border px-1 py-0.5 text-[9.5px]">⌘K</kbd>
           </button>
         </div>
 
@@ -128,7 +153,7 @@ export function Sidebar({
                 </p>
               )}
               <div className="space-y-0.5 pb-4">
-                {conversations.map((c) => (
+                {sorted.map((c) => (
                   <div
                     key={c.id}
                     className={`group relative flex cursor-pointer items-center rounded-lg transition-colors ${
@@ -142,21 +167,65 @@ export function Sidebar({
                     }}
                   >
                     <div className="min-w-0 flex-1 px-3 py-2.5">
-                      <p className="truncate text-[13.5px] font-medium">{c.title || 'Untitled'}</p>
-                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                        {modelLabel(c.model)} · {new Date(c.updatedAt).toLocaleDateString()}
-                      </p>
+                      {renamingId === c.id ? (
+                        <input
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename()
+                            if (e.key === 'Escape') setRenamingId(null)
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onBlur={commitRename}
+                          autoFocus
+                          className="w-full rounded-md border border-primary/40 bg-background px-1.5 py-0.5 text-[13px] outline-none"
+                        />
+                      ) : (
+                        <>
+                          <p className="flex items-center gap-1.5 truncate text-[13.5px] font-medium">
+                            {c.pinned && <Pin size={11} className="shrink-0 text-primary" />}
+                            {c.temp && <Ghost size={11} className="shrink-0 text-primary" />}
+                            <span className="truncate">{c.title || 'Untitled'}</span>
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                            {modelLabel(c.model)} · {new Date(c.updatedAt).toLocaleDateString()}
+                          </p>
+                        </>
+                      )}
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDelete(c.id)
-                      }}
-                      className="mr-2 hidden rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-destructive group-hover:block"
-                      title="Delete chat"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="mr-2 hidden shrink-0 items-center group-hover:flex">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onTogglePin(c.id)
+                        }}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                        title={c.pinned ? 'Unpin' : 'Pin to top'}
+                      >
+                        {c.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRenamingId(c.id)
+                          setRenameDraft(c.title)
+                        }}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                        title="Rename"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete(c.id)
+                        }}
+                        className="rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-destructive"
+                        title="Delete chat"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

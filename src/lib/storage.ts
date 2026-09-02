@@ -59,7 +59,20 @@ export const store = {
     return s
   },
   saveSettings: (s: Settings) => write(KEYS.settings, s),
-  loadConversations: (): Conversation[] => readArray<Conversation>(KEYS.conversations),
+  loadConversations: (): Conversation[] =>
+    readArray<Conversation>(KEYS.conversations).map((c) => ({
+      ...c,
+      messages: c.messages.map((m) =>
+        // A message stuck in "streaming" means the tab was closed/reloaded
+        // mid-generation. Keep any partial content; only flag an error (with
+        // a Retry button) when nothing arrived at all.
+        !m.streaming
+          ? m
+          : m.content
+            ? { ...m, streaming: false }
+            : { ...m, streaming: false, error: m.error ?? 'Generation interrupted — hit Retry.' },
+      ),
+    })),
   saveConversations: (c: Conversation[]) => write(KEYS.conversations, c),
   loadVideos: (): VideoJob[] => readArray<VideoJob>(KEYS.videos),
   saveVideos: (v: VideoJob[]) => write(KEYS.videos, v),

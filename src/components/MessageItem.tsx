@@ -6,7 +6,18 @@ import {
   oneDark,
   oneLight,
 } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Check, Copy, ChevronDown, ChevronRight, Brain, AlertCircle, FileText } from 'lucide-react'
+import {
+  Check,
+  Copy,
+  ChevronDown,
+  ChevronRight,
+  Brain,
+  AlertCircle,
+  FileText,
+  RefreshCw,
+  Pencil,
+  Play,
+} from 'lucide-react'
 import type { Attachment, ChatMessage } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
 import { formatSize } from '@/lib/files'
@@ -45,14 +56,19 @@ function AttachmentChip({ attachment }: { attachment: Attachment }) {
   )
 }
 
+/** Languages that can be rendered live in the artifacts panel. */
+const PREVIEWABLE = new Set(['html', 'svg'])
+
 function CodeBlock({
   language,
   code,
   dark,
+  onPreview,
 }: {
   language: string
   code: string
   dark: boolean
+  onPreview?: (code: string, language: string) => void
 }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
@@ -60,17 +76,30 @@ function CodeBlock({
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  const previewable = PREVIEWABLE.has(language.toLowerCase())
   return (
     <div className="group/code my-3 overflow-hidden rounded-xl border border-border bg-[#282c34] text-sm">
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
         <span className="font-mono-code text-xs text-white/50">{language || 'text'}</span>
-        <button
-          onClick={copy}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white/50 transition-colors hover:text-white"
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <span className="flex items-center gap-1.5">
+          {previewable && onPreview && (
+            <button
+              onClick={() => onPreview(code, language.toLowerCase())}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white/50 transition-colors hover:text-white"
+              title="Render live in the preview panel"
+            >
+              <Play size={12} />
+              Preview
+            </button>
+          )}
+          <button
+            onClick={copy}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-white/50 transition-colors hover:text-white"
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </span>
       </div>
       <SyntaxHighlighter
         language={language || 'text'}
@@ -90,7 +119,15 @@ function CodeBlock({
   )
 }
 
-export function Markdown({ text, dark }: { text: string; dark: boolean }) {
+export function Markdown({
+  text,
+  dark,
+  onPreview,
+}: {
+  text: string
+  dark: boolean
+  onPreview?: (code: string, language: string) => void
+}) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -105,11 +142,13 @@ export function Markdown({ text, dark }: { text: string; dark: boolean }) {
                 className="rounded bg-muted px-1.5 py-0.5 font-mono-code text-[0.85em] text-primary"
                 {...props}
               >
-                {code}
+                {children}
               </code>
             )
           }
-          return <CodeBlock language={match?.[1] ?? ''} code={code} dark={dark} />
+          return (
+            <CodeBlock language={match?.[1] ?? ''} code={code} dark={dark} onPreview={onPreview} />
+          )
         },
         p: ({ children }) => <p className="my-2.5 leading-7 first:mt-0 last:mb-0">{children}</p>,
         ul: ({ children }) => <ul className="my-2.5 list-disc space-y-1 pl-6">{children}</ul>,
@@ -180,16 +219,39 @@ function ReasoningBlock({ text }: { text: string }) {
   )
 }
 
+function useCopy(text: string) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return { copied, copy }
+}
+
 export const MessageItem = memo(function MessageItem({
   message,
   dark,
+  isLast = false,
+  onRegenerate,
+  onEdit,
+  onPreview,
 }: {
   message: ChatMessage
   dark: boolean
+  /** true for the most recent assistant message — enables Regenerate */
+  isLast?: boolean
+  onRegenerate?: () => void
+  onEdit?: (id: string, text: string) => void
+  onPreview?: (code: string, language: string) => void
 }) {
+  const { copied, copy } = useCopy(message.content)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(message.content)
+
   if (message.role === 'user') {
     return (
-      <div className="rise-in flex justify-end px-4 py-2 md:px-8">
+      <div className="rise-in group flex justify-end px-4 py-2 md:px-8">
         <div className="max-w-[85%] md:max-w-[75%]">
           {message.attachments && message.attachments.length > 0 && (
             <div className="mb-1.5 flex flex-wrap justify-end gap-2">
@@ -198,9 +260,65 @@ export const MessageItem = memo(function MessageItem({
               ))}
             </div>
           )}
-          {message.content && (
-            <div className="rounded-2xl rounded-br-md bg-accent px-4 py-2.5">
-              <p className="whitespace-pre-wrap leading-7">{message.content}</p>
+          {editing ? (
+            <div className="rounded-2xl border border-primary/40 bg-card p-2 shadow-sm">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={Math.min(10, Math.max(2, draft.split('\n').length))}
+                className="w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-7 outline-none"
+                autoFocus
+              />
+              <div className="flex justify-end gap-1.5 px-1 pb-0.5">
+                <button
+                  onClick={() => {
+                    setDraft(message.content)
+                    setEditing(false)
+                  }}
+                  className="rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const v = draft.trim()
+                    if (v && v !== message.content) onEdit?.(message.id, v)
+                    setEditing(false)
+                  }}
+                  className="rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+                >
+                  Save & resend
+                </button>
+              </div>
+            </div>
+          ) : (
+            message.content && (
+              <div className="rounded-2xl rounded-br-md bg-accent px-4 py-2.5">
+                <p className="whitespace-pre-wrap leading-7">{message.content}</p>
+              </div>
+            )
+          )}
+          {!editing && (
+            <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <button
+                onClick={copy}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Copy message"
+              >
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+              {onEdit && (
+                <button
+                  onClick={() => {
+                    setDraft(message.content)
+                    setEditing(true)
+                  }}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Edit & branch from here"
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -208,8 +326,10 @@ export const MessageItem = memo(function MessageItem({
     )
   }
 
+  const showActions = !message.streaming && !message.error && message.content
+
   return (
-    <div className="rise-in px-4 py-2 md:px-8">
+    <div className="rise-in group px-4 py-2 md:px-8">
       <div className="mx-auto w-full max-w-3xl">
         <div className="mb-1.5 flex items-center gap-2">
           <span className="font-display flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -223,13 +343,22 @@ export const MessageItem = memo(function MessageItem({
         {message.error ? (
           <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
             <AlertCircle size={15} className="mt-0.5 shrink-0" />
-            <span>{message.error}</span>
+            <span className="flex-1">{message.error}</span>
+            {isLast && onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium hover:bg-destructive/15"
+              >
+                <RefreshCw size={12} />
+                Retry
+              </button>
+            )}
           </div>
         ) : (
           <div className={message.streaming && !message.content ? 'stream-cursor' : ''}>
             {message.content ? (
               <div className={message.streaming ? 'stream-cursor' : ''}>
-                <Markdown text={message.content} dark={dark} />
+                <Markdown text={message.content} dark={dark} onPreview={onPreview} />
               </div>
             ) : (
               <span className="text-sm text-muted-foreground">
@@ -237,6 +366,28 @@ export const MessageItem = memo(function MessageItem({
                   ? 'Reading uploaded files…'
                   : (message.statusText ?? 'Thinking…')}
               </span>
+            )}
+          </div>
+        )}
+        {showActions && (
+          <div className="mt-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={copy}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Copy response"
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            {isLast && onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Regenerate response"
+              >
+                <RefreshCw size={13} />
+                Regenerate
+              </button>
             )}
           </div>
         )}

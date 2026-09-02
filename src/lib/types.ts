@@ -39,6 +39,12 @@ export interface Conversation {
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
+  /** pinned conversations float to the top of the sidebar */
+  pinned?: boolean
+  /** temporary chats are never persisted (ChatGPT-style temporary chat) */
+  temp?: boolean
+  /** response style preset id (see lib/styles.ts) */
+  style?: string
 }
 
 export interface Settings {
