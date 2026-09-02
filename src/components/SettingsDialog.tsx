@@ -158,6 +158,15 @@ export function SettingsDialog({
                 helpUrl="https://console.volcengine.com/ark"
                 helpText="console.volcengine.com → Ark → API keys"
               />
+
+              <SecretField
+                label="fal.ai key (FLUX.2, Nano Banana Pro, Ideogram 4)"
+                value={draft.falKey}
+                onChange={(v) => set('falKey', v)}
+                placeholder="fal key"
+                helpUrl="https://fal.ai/dashboard/keys"
+                helpText="fal.ai → Dashboard → Keys (pay-per-use, Stripe card)"
+              />
             </>
           )}
 

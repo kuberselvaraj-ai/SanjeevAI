@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: Settings = {
   e2bKey: '',
   dashscopeKey: '',
   arkKey: '',
+  falKey: '',
   moonshotBaseUrl: 'https://api.moonshot.ai/v1',
   minimaxBaseUrl: 'https://api.minimax.io/v1',
   temperature: 0.6,

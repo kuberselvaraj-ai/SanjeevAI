@@ -10,10 +10,11 @@ import {
   GEMINI_SIZES,
   QWEN_SIZES,
   SEEDREAM_SIZES,
+  FAL_RATIOS,
   isOpenAiImage,
-  isGeminiImage,
   isQwenImage,
   isSeedreamImage,
+  isFalImage,
   generateImageDirect,
   fileToDataUrl,
 } from '@/lib/image'
@@ -52,20 +53,25 @@ export function ImageView({
   const openai = isOpenAiImage(model)
   const qwen = isQwenImage(model)
   const seedream = isSeedreamImage(model)
+  const fal = isFalImage(model)
   const providerName = openai
     ? 'OpenAI'
     : qwen
       ? 'Alibaba Bailian'
       : seedream
         ? 'Volcano Engine Ark'
-        : 'Google AI Studio'
+        : fal
+          ? 'fal.ai'
+          : 'Google AI Studio'
   const keyMissing = openai
     ? !settings.openaiKey
     : qwen
       ? !settings.dashscopeKey
       : seedream
         ? !settings.arkKey
-        : !settings.geminiKey
+        : fal
+          ? !settings.falKey
+          : !settings.geminiKey
   const noKey = !hosted && keyMissing
   const generateMutation = trpc.image.generate.useMutation()
   const trpcUtils = trpc.useUtils()
@@ -76,13 +82,16 @@ export function ImageView({
     if (isQwenImage(m)) setSize(QWEN_SIZES[0])
     else if (isSeedreamImage(m)) setSize(SEEDREAM_SIZES[0])
     else if (isOpenAiImage(m)) setSize(OPENAI_SIZES[0])
+    else if (isFalImage(m)) setAspectRatio('1:1')
   }
 
   const detail = openai
     ? `${size.replace('x', '×')} · ${quality}`
     : qwen || seedream
       ? size.replace(/[x*]/, '×')
-      : `${aspectRatio} · ${imageSize}`
+      : fal
+        ? aspectRatio
+        : `${aspectRatio} · ${imageSize}`
 
   const submit = async () => {
     if (!prompt.trim() || noKey) return
@@ -139,7 +148,7 @@ export function ImageView({
           <ImageIcon size={17} />
         </button>
         <h2 className="flex-1 text-sm font-medium text-muted-foreground">
-          Image studio · Seedream, Qwen Image, GPT Image 2 & Nano Banana 2
+          Image studio · FLUX.2, Nano Banana Pro, Ideogram 4, Seedream & more
         </h2>
       </header>
 
@@ -229,7 +238,19 @@ export function ImageView({
                   </option>
                 ))}
               </select>
-              {qwen || seedream ? (
+              {fal ? (
+                <select
+                  value={aspectRatio}
+                  onChange={(e) => setAspectRatio(e.target.value)}
+                  className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
+                >
+                  {FAL_RATIOS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              ) : qwen || seedream ? (
                 <select
                   value={size}
                   onChange={(e) => setSize(e.target.value)}
@@ -309,7 +330,9 @@ export function ImageView({
                   ? 'Qwen Image 2 Pro — Alibaba Bailian. Excellent at Chinese text, posters and typography. Pay-as-you-go via Alipay.'
                   : seedream
                     ? 'Seedream 4.5 — ByteDance’s flagship on Volcano Engine Ark. 4K output, strong text rendering, ~$0.035/image.'
-                    : 'Nano Banana 2 (Gemini 3.1 Flash Image) — fast, ~$0.045/image at 1K, and the best at editing a reference photo while keeping the subject consistent.'}
+                    : fal
+                      ? `${IMAGE_MODELS.find((m) => m.id === model)?.description ?? ''} — pay-per-use via fal.ai, one key for all fal models.`
+                      : 'Nano Banana 2 (Gemini 3.1 Flash Image) — fast, ~$0.045/image at 1K, and the best at editing a reference photo while keeping the subject consistent.'}
             </p>
             {error && (
               <p className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">

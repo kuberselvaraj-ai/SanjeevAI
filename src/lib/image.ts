@@ -12,18 +12,32 @@ import type { Settings } from './types'
 
 export const IMAGE_MODELS = [
   {
+    id: 'fal-ai/flux-2-flex',
+    label: 'FLUX.2',
+    provider: 'fal.ai',
+    description: 'Western photorealism · kills the “AI look” · ~$0.03/img',
+    badge: 'US default',
+  },
+  {
+    id: 'fal-ai/nano-banana-pro',
+    label: 'Nano Banana Pro',
+    provider: 'Google via fal',
+    description: 'Google flagship · 4K · best editing · ~$0.15/img',
+    badge: 'Premium',
+  },
+  {
+    id: 'fal-ai/ideogram-4',
+    label: 'Ideogram 4',
+    provider: 'via fal.ai',
+    description: 'Best legible text in images · posters & logos',
+    badge: 'Typography',
+  },
+  {
     id: 'doubao-seedream-4-5-251128',
     label: 'Seedream 4.5',
     provider: 'Volcano',
     description: 'ByteDance flagship · 4K · great text rendering · ~$0.035/img',
-    badge: 'Recommended',
-  },
-  {
-    id: 'qwen-image-2.0-pro',
-    label: 'Qwen Image 2 Pro',
-    provider: 'Alibaba',
-    description: 'Alibaba Bailian · strong Chinese text & posters',
-    badge: 'China-friendly',
+    badge: 'Value',
   },
   {
     id: 'gpt-image-2',
@@ -39,6 +53,13 @@ export const IMAGE_MODELS = [
     description: 'Fast & cheap · best at editing your photos · ~$0.045/img',
     badge: 'Editor',
   },
+  {
+    id: 'qwen-image-2.0-pro',
+    label: 'Qwen Image 2 Pro',
+    provider: 'Alibaba',
+    description: 'Alibaba Bailian · strong Chinese text & posters',
+    badge: 'China-friendly',
+  },
 ] as const
 
 export const OPENAI_SIZES = ['1024x1024', '1536x1024', '1024x1536'] as const
@@ -53,11 +74,13 @@ export const QWEN_SIZES = [
   '1728*2368',
 ] as const
 export const SEEDREAM_SIZES = ['2048x2048', '2304x1728', '1728x2304', '2560x1440', '1440x2560'] as const
+export const FAL_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4'] as const
 
 export const isOpenAiImage = (model: string) => model.startsWith('gpt-image')
 export const isGeminiImage = (model: string) => model.startsWith('gemini')
 export const isQwenImage = (model: string) => model.startsWith('qwen-image')
 export const isSeedreamImage = (model: string) => model.startsWith('doubao-seedream')
+export const isFalImage = (model: string) => model.startsWith('fal-ai/')
 
 export interface GenerateImageOpts {
   prompt: string
@@ -232,6 +255,56 @@ async function generateSeedream(
   throw new Error('Seedream returned no image')
 }
 
+function fluxSize(aspectRatio?: string): string {
+  switch (aspectRatio) {
+    case '16:9':
+      return 'landscape_16_9'
+    case '9:16':
+      return 'portrait_16_9'
+    case '4:3':
+      return 'landscape_4_3'
+    case '3:4':
+      return 'portrait_4_3'
+    default:
+      return 'square_hd'
+  }
+}
+
+async function generateFal(settings: Settings, opts: GenerateImageOpts): Promise<GeneratedImage> {
+  if (!settings.falKey) {
+    throw new Error('Add a fal.ai API key in Settings to use FLUX.2, Nano Banana Pro and Ideogram 4.')
+  }
+  const ratio = opts.aspectRatio || '1:1'
+  let body: Record<string, unknown>
+  if (opts.model.includes('nano-banana')) {
+    body = { prompt: opts.prompt, aspect_ratio: ratio, resolution: '2K', output_format: 'png' }
+  } else if (opts.model.includes('ideogram')) {
+    body = { prompt: opts.prompt, aspect_ratio: ratio }
+  } else {
+    body = { prompt: opts.prompt, image_size: fluxSize(ratio), output_format: 'png' }
+  }
+  if (opts.referenceImage) body.image_urls = [opts.referenceImage]
+  const res = await fetch(`https://fal.run/${opts.model}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Key ${settings.falKey}` },
+    body: JSON.stringify(body),
+  })
+  const data = (await res.json().catch(() => ({}))) as {
+    images?: { url?: string; content_type?: string }[]
+    detail?: string | { msg?: string }[]
+    message?: string
+  }
+  if (!res.ok) {
+    const detail = Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join('; ') : data.detail
+    throw new Error(detail || data.message || `fal.ai API error ${res.status}`)
+  }
+  const img = data.images?.[0]
+  if (!img?.url) throw new Error('fal.ai returned no image')
+  const out = await urlToB64(img.url)
+  if (img.content_type) out.mimeType = img.content_type
+  return out
+}
+
 export async function generateImageDirect(
   settings: Settings,
   opts: GenerateImageOpts,
@@ -239,6 +312,7 @@ export async function generateImageDirect(
   if (isOpenAiImage(opts.model)) return generateOpenAi(settings, opts)
   if (isQwenImage(opts.model)) return generateQwen(settings, opts)
   if (isSeedreamImage(opts.model)) return generateSeedream(settings, opts)
+  if (isFalImage(opts.model)) return generateFal(settings, opts)
   return generateGemini(settings, opts)
 }
 

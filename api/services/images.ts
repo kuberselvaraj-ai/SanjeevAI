@@ -10,6 +10,7 @@
 
 import { dashscopeConfigured, qwenGenerateImage } from "./dashscope";
 import { arkConfigured, seedreamGenerateImage } from "./seedream";
+import { falConfigured, falGenerateImage } from "./fal";
 
 export const OPENAI_IMAGE_MODEL = "gpt-image-2";
 export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
@@ -30,6 +31,10 @@ export function isSeedreamImage(model: string): boolean {
   return model.startsWith("doubao-seedream");
 }
 
+export function isFalImage(model: string): boolean {
+  return model.startsWith("fal-ai/");
+}
+
 export function openaiConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
 }
@@ -44,6 +49,7 @@ export function providerConfigured(model: string): boolean {
   if (isGeminiImage(model)) return geminiConfigured();
   if (isQwenImage(model)) return dashscopeConfigured();
   if (isSeedreamImage(model)) return arkConfigured();
+  if (isFalImage(model)) return falConfigured();
   return false;
 }
 
@@ -190,6 +196,14 @@ export async function generateImage(opts: GenerateImageOpts): Promise<GeneratedI
       prompt: opts.prompt,
       model: opts.model,
       size: opts.size,
+      referenceImage: opts.referenceImage,
+    });
+  }
+  if (isFalImage(opts.model)) {
+    return falGenerateImage({
+      prompt: opts.prompt,
+      model: opts.model,
+      aspectRatio: opts.aspectRatio,
       referenceImage: opts.referenceImage,
     });
   }
