@@ -3,12 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { PLANS } from "@contracts/constants";
 import { createRouter, authedQuery } from "./middleware";
 import { getMonthUsage, recordUsage } from "./queries/usage";
-import {
-  generateImage,
-  geminiConfigured,
-  isOpenAiImage,
-  openaiConfigured,
-} from "./services/images";
+import { generateImage, providerConfigured } from "./services/images";
 
 export const imageRouter = createRouter({
   /** Synchronous generation — returns the image as base64. */
@@ -25,10 +20,7 @@ export const imageRouter = createRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const configured = isOpenAiImage(input.model)
-        ? openaiConfigured()
-        : geminiConfigured();
-      if (!configured) {
+      if (!providerConfigured(input.model)) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:

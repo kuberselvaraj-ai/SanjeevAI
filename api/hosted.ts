@@ -4,6 +4,7 @@ import { PLANS } from "@contracts/constants";
 import { authenticateRequest } from "./kimi/auth";
 import { getMonthUsage, recordUsage } from "./queries/usage";
 import { extractFileText, moonshotKey, openChatStream } from "./services/moonshot";
+import { dashscopeConfigured, qwenSpeak, qwenTranscribe } from "./services/dashscope";
 
 /**
  * Hosted-mode API: the browser talks to these endpoints, the server calls
@@ -186,9 +187,11 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     } catch {
       return c.json({ error: "Please sign in to use Sanjeev AI." }, 401);
     }
-    if (!process.env.OPENAI_API_KEY) {
+    const useOpenAi = Boolean(process.env.OPENAI_API_KEY);
+    const useDashscope = !useOpenAi && dashscopeConfigured();
+    if (!useOpenAi && !useDashscope) {
       return c.json(
-        { error: "Voice input is not configured yet (missing OpenAI key on the server)." },
+        { error: "Voice input is not configured yet (no OpenAI or Alibaba Bailian key on the server)." },
         503,
       );
     }
@@ -200,31 +203,48 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     if (file.size > 25 * 1024 * 1024) {
       return c.json({ error: "Audio too large (25 MB max)." }, 413);
     }
-    const out = new FormData();
-    out.append("model", "whisper-1");
-    out.append("file", file, file.name || "audio.webm");
-    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: out,
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      text?: string;
-      error?: { message?: string };
-    };
-    if (!res.ok || data.text === undefined) {
-      return c.json({ error: data.error?.message || `OpenAI API error ${res.status}` }, 502);
+    let text: string;
+    let asrModel: string;
+    if (useOpenAi) {
+      const out = new FormData();
+      out.append("model", "whisper-1");
+      out.append("file", file, file.name || "audio.webm");
+      const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: out,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        text?: string;
+        error?: { message?: string };
+      };
+      if (!res.ok || data.text === undefined) {
+        return c.json({ error: data.error?.message || `OpenAI API error ${res.status}` }, 502);
+      }
+      text = data.text;
+      asrModel = "whisper-1";
+    } else {
+      const buf = Buffer.from(await file.arrayBuffer());
+      try {
+        text = await qwenTranscribe(
+          buf.toString("base64"),
+          file.type || "audio/webm",
+        );
+      } catch (e) {
+        return c.json({ error: (e as Error).message }, 502);
+      }
+      asrModel = "qwen3-asr-flash";
     }
     // Rough metering: ~1 token per 20KB of audio
     await recordUsage({
       userId: user.id,
       kind: "chat",
-      model: "whisper-1",
+      model: asrModel,
       inputTokens: Math.ceil(file.size / 20000),
       outputTokens: 0,
       videoCount: 0,
     }).catch(() => {});
-    return c.json({ text: data.text });
+    return c.json({ text });
   });
 
   // ── Read aloud: OpenAI TTS ─────────────────────────────────────────────
@@ -235,9 +255,11 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     } catch {
       return c.json({ error: "Please sign in to use Sanjeev AI." }, 401);
     }
-    if (!process.env.OPENAI_API_KEY) {
+    const useOpenAi = Boolean(process.env.OPENAI_API_KEY);
+    const useDashscope = !useOpenAi && dashscopeConfigured();
+    if (!useOpenAi && !useDashscope) {
       return c.json(
-        { error: "Read aloud is not configured yet (missing OpenAI key on the server)." },
+        { error: "Read aloud is not configured yet (no OpenAI or Alibaba Bailian key on the server)." },
         503,
       );
     }
@@ -245,27 +267,40 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     const text = body?.text?.slice(0, 4000);
     if (!text) return c.json({ error: "text is required" }, 400);
 
-    const res = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
-    });
-    if (!res.ok || !res.body) {
-      const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-      return c.json({ error: j.error?.message || `OpenAI API error ${res.status}` }, 502);
+    let audioBody: BodyInit;
+    let ttsModel: string;
+    if (useOpenAi) {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
+      });
+      if (!res.ok || !res.body) {
+        const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+        return c.json({ error: j.error?.message || `OpenAI API error ${res.status}` }, 502);
+      }
+      audioBody = Buffer.from(await res.arrayBuffer());
+      ttsModel = "tts-1";
+    } else {
+      try {
+        audioBody = await qwenSpeak(text);
+      } catch (e) {
+        return c.json({ error: (e as Error).message }, 502);
+      }
+      ttsModel = "qwen3-tts-flash";
     }
     await recordUsage({
       userId: user.id,
       kind: "chat",
-      model: "tts-1",
+      model: ttsModel,
       inputTokens: 0,
       outputTokens: Math.ceil(text.length / 4),
       videoCount: 0,
     }).catch(() => {});
-    return new Response(res.body, {
+    return new Response(audioBody, {
       headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
     });
   });

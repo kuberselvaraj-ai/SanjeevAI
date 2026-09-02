@@ -140,6 +140,24 @@ export function SettingsDialog({
                 helpUrl="https://e2b.dev/dashboard"
                 helpText="Get a key at e2b.dev (free tier)"
               />
+
+              <SecretField
+                label="Alibaba Bailian key (Qwen Image + voice)"
+                value={draft.dashscopeKey}
+                onChange={(v) => set('dashscopeKey', v)}
+                placeholder="sk-..."
+                helpUrl="https://bailian.console.aliyun.com/"
+                helpText="bailian.console.aliyun.com → API-KEY管理"
+              />
+
+              <SecretField
+                label="Volcano Engine Ark key (Seedream images)"
+                value={draft.arkKey}
+                onChange={(v) => set('arkKey', v)}
+                placeholder="ARK API key"
+                helpUrl="https://console.volcengine.com/ark"
+                helpText="console.volcengine.com → Ark → API keys"
+              />
             </>
           )}
 

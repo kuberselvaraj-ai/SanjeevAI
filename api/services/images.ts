@@ -8,11 +8,26 @@
  *          reference images are passed as inlineData parts for editing.
  */
 
+import { dashscopeConfigured, qwenGenerateImage } from "./dashscope";
+import { arkConfigured, seedreamGenerateImage } from "./seedream";
+
 export const OPENAI_IMAGE_MODEL = "gpt-image-2";
 export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 
 export function isOpenAiImage(model: string): boolean {
   return model.startsWith("gpt-image");
+}
+
+export function isGeminiImage(model: string): boolean {
+  return model.startsWith("gemini");
+}
+
+export function isQwenImage(model: string): boolean {
+  return model.startsWith("qwen-image");
+}
+
+export function isSeedreamImage(model: string): boolean {
+  return model.startsWith("doubao-seedream");
 }
 
 export function openaiConfigured(): boolean {
@@ -21,6 +36,15 @@ export function openaiConfigured(): boolean {
 
 export function geminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
+}
+
+/** Is the provider for this model configured on the server? */
+export function providerConfigured(model: string): boolean {
+  if (isOpenAiImage(model)) return openaiConfigured();
+  if (isGeminiImage(model)) return geminiConfigured();
+  if (isQwenImage(model)) return dashscopeConfigured();
+  if (isSeedreamImage(model)) return arkConfigured();
+  return false;
 }
 
 export interface GenerateImageOpts {
@@ -152,5 +176,22 @@ async function generateGemini(opts: GenerateImageOpts): Promise<GeneratedImage> 
 }
 
 export async function generateImage(opts: GenerateImageOpts): Promise<GeneratedImage> {
-  return isOpenAiImage(opts.model) ? generateOpenAi(opts) : generateGemini(opts);
+  if (isOpenAiImage(opts.model)) return generateOpenAi(opts);
+  if (isQwenImage(opts.model)) {
+    return qwenGenerateImage({
+      prompt: opts.prompt,
+      model: opts.model,
+      size: opts.size,
+      referenceImage: opts.referenceImage,
+    });
+  }
+  if (isSeedreamImage(opts.model)) {
+    return seedreamGenerateImage({
+      prompt: opts.prompt,
+      model: opts.model,
+      size: opts.size,
+      referenceImage: opts.referenceImage,
+    });
+  }
+  return generateGemini(opts);
 }

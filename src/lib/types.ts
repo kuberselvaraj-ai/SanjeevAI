@@ -56,6 +56,10 @@ export interface Settings {
   geminiKey: string
   /** E2B key — run Python code from chat (desktop mode) */
   e2bKey: string
+  /** Alibaba Bailian key — Qwen Image + voice (desktop mode) */
+  dashscopeKey: string
+  /** Volcano Engine Ark key — Seedream images (desktop mode) */
+  arkKey: string
   /** defaults to https://api.moonshot.ai/v1 */
   moonshotBaseUrl: string
   /** defaults to https://api.minimax.io/v1 */

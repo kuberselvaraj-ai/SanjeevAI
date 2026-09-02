@@ -8,7 +8,12 @@ import {
   OPENAI_QUALITIES,
   GEMINI_RATIOS,
   GEMINI_SIZES,
+  QWEN_SIZES,
+  SEEDREAM_SIZES,
   isOpenAiImage,
+  isGeminiImage,
+  isQwenImage,
+  isSeedreamImage,
   generateImageDirect,
   fileToDataUrl,
 } from '@/lib/image'
@@ -45,11 +50,39 @@ export function ImageView({
   const fileRef = useRef<HTMLInputElement>(null)
 
   const openai = isOpenAiImage(model)
-  const noKey = !hosted && (openai ? !settings.openaiKey : !settings.geminiKey)
+  const qwen = isQwenImage(model)
+  const seedream = isSeedreamImage(model)
+  const providerName = openai
+    ? 'OpenAI'
+    : qwen
+      ? 'Alibaba Bailian'
+      : seedream
+        ? 'Volcano Engine Ark'
+        : 'Google AI Studio'
+  const keyMissing = openai
+    ? !settings.openaiKey
+    : qwen
+      ? !settings.dashscopeKey
+      : seedream
+        ? !settings.arkKey
+        : !settings.geminiKey
+  const noKey = !hosted && keyMissing
   const generateMutation = trpc.image.generate.useMutation()
   const trpcUtils = trpc.useUtils()
 
-  const detail = openai ? `${size.replace('x', '×')} · ${quality}` : `${aspectRatio} · ${imageSize}`
+  const pickModel = (m: string) => {
+    setModel(m)
+    // each provider has its own size vocabulary — reset to its default
+    if (isQwenImage(m)) setSize(QWEN_SIZES[0])
+    else if (isSeedreamImage(m)) setSize(SEEDREAM_SIZES[0])
+    else if (isOpenAiImage(m)) setSize(OPENAI_SIZES[0])
+  }
+
+  const detail = openai
+    ? `${size.replace('x', '×')} · ${quality}`
+    : qwen || seedream
+      ? size.replace(/[x*]/, '×')
+      : `${aspectRatio} · ${imageSize}`
 
   const submit = async () => {
     if (!prompt.trim() || noKey) return
@@ -106,7 +139,7 @@ export function ImageView({
           <ImageIcon size={17} />
         </button>
         <h2 className="flex-1 text-sm font-medium text-muted-foreground">
-          Image studio · GPT Image 2 & Nano Banana 2
+          Image studio · Seedream, Qwen Image, GPT Image 2 & Nano Banana 2
         </h2>
       </header>
 
@@ -122,7 +155,7 @@ export function ImageView({
             <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
               <AlertCircle size={16} className="mt-0.5 shrink-0 text-primary" />
               <span>
-                Add your {openai ? 'OpenAI' : 'Google AI Studio'} API key to use{' '}
+                Add your {providerName} API key to use{' '}
                 {IMAGE_MODELS.find((m) => m.id === model)?.label}.{' '}
                 <button
                   onClick={onOpenSettings}
@@ -187,7 +220,7 @@ export function ImageView({
             <div className="mt-3 flex flex-wrap items-center gap-2.5">
               <select
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => pickModel(e.target.value)}
                 className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
               >
                 {IMAGE_MODELS.map((m) => (
@@ -196,7 +229,19 @@ export function ImageView({
                   </option>
                 ))}
               </select>
-              {openai ? (
+              {qwen || seedream ? (
+                <select
+                  value={size}
+                  onChange={(e) => setSize(e.target.value)}
+                  className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
+                >
+                  {(qwen ? QWEN_SIZES : SEEDREAM_SIZES).map((s) => (
+                    <option key={s} value={s}>
+                      {s.replace(/[x*]/, '×')}
+                    </option>
+                  ))}
+                </select>
+              ) : openai ? (
                 <>
                   <select
                     value={size}
@@ -260,7 +305,11 @@ export function ImageView({
             <p className="mt-2.5 text-[11px] leading-5 text-muted-foreground/80">
               {openai
                 ? 'GPT Image 2 — OpenAI’s flagship image model. ~$0.006–0.21 per image depending on size & quality.'
-                : 'Nano Banana 2 (Gemini 3.1 Flash Image) — fast, ~$0.045/image at 1K, and the best at editing a reference photo while keeping the subject consistent.'}
+                : qwen
+                  ? 'Qwen Image 2 Pro — Alibaba Bailian. Excellent at Chinese text, posters and typography. Pay-as-you-go via Alipay.'
+                  : seedream
+                    ? 'Seedream 4.5 — ByteDance’s flagship on Volcano Engine Ark. 4K output, strong text rendering, ~$0.035/image.'
+                    : 'Nano Banana 2 (Gemini 3.1 Flash Image) — fast, ~$0.045/image at 1K, and the best at editing a reference photo while keeping the subject consistent.'}
             </p>
             {error && (
               <p className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
