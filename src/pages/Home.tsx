@@ -3,12 +3,18 @@ import { toast } from 'sonner'
 import { KeyRound } from 'lucide-react'
 import type { Attachment, ChatMessage, Conversation, ImageJob, Settings, VideoJob } from '@/lib/types'
 import { store, uid } from '@/lib/storage'
-import { streamChat, type ApiMessage, type MessagePart } from '@/lib/kimi'
+import { streamChat, type ApiMessage, type MessagePart, type ToolCall } from '@/lib/kimi'
+import {
+  AGENT_SYSTEM_HINT,
+  AGENT_TOOLS,
+  executeAgentTool,
+  needsAgentTools,
+} from '@/lib/agent'
 import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
-import { DEFAULT_SYSTEM_PROMPT, isPremiumModel } from '@/lib/models'
+import { AUTO_MODEL, DEFAULT_SYSTEM_PROMPT, isPremiumModel } from '@/lib/models'
 import {
   fitMessagesToContext,
   resolveChatModel,
@@ -169,7 +175,7 @@ export default function Home() {
   /** Convert stored messages into the API payload: document extracts become
    *  system context, images become vision parts on their user message. */
   const buildApiMessages = useCallback(
-    (conv: Conversation, messages: ChatMessage[], model: string): ApiMessage[] => {
+    (conv: Conversation, messages: ChatMessage[], model: string, agentTools = false): ApiMessage[] => {
       const now = new Date()
       const timeLine = `Current date and time: ${now.toLocaleString()} (timezone: ${
         Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -177,10 +183,11 @@ export default function Home() {
       const style = styleInstruction(conv.style)
       const memory = memoryContext()
       const research = settings.deepResearch ? `\n\n${RESEARCH_PROMPT}` : ''
+      const agent = agentTools ? `\n\n${AGENT_SYSTEM_HINT}` : ''
       const out: ApiMessage[] = [
         {
           role: 'system',
-          content: `${systemPromptFor(model, conv.systemPrompt)}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}\n\n${timeLine}`,
+          content: `${systemPromptFor(model, conv.systemPrompt)}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}${agent}\n\n${timeLine}`,
         },
       ]
       for (const m of messages) {
@@ -236,8 +243,14 @@ export default function Home() {
             claude: Boolean(settings.anthropicKey || settings.openrouterKey),
             gpt: Boolean(settings.openaiKey || settings.openrouterKey),
           }
+      // Deliverable work (reports, plans, analyses, visuals) gets the
+      // specialist toolbox — and in Auto mode always goes to the
+      // orchestrator brain (Kimi K3, our strongest agent model).
+      const wantsPipeline = needsAgentTools(lastUser?.content ?? '')
       const route = resolveChatModel(conv.model, lastUser?.content ?? '', hasImages, premium)
-      const resolved = route.model
+      let resolved = route.model
+      if (wantsPipeline && conv.model === AUTO_MODEL) resolved = 'kimi-k3'
+      const agentRequested = wantsPipeline && !isPremiumModel(resolved)
       const resolvedAvailable = resolved.startsWith('anthropic/')
         ? premium.claude
         : resolved.startsWith('openai/')
@@ -272,7 +285,7 @@ export default function Home() {
         }))
       }
 
-      const apiMessages = buildApiMessages(conv, baseMessages, resolved)
+      const apiMessages = buildApiMessages(conv, baseMessages, resolved, agentRequested)
       // Premium models: smaller context, higher price — slide the window.
       const finalMessages = isPremiumModel(resolved)
         ? fitMessagesToContext(apiMessages)
@@ -325,6 +338,35 @@ export default function Home() {
         },
       }
 
+      // Specialist toolbox: model calls run_python / generate_image mid-stream,
+      // we execute them and feed results back; artifacts embed into the reply.
+      const agent = agentRequested
+        ? {
+            tools: AGENT_TOOLS,
+            execute: async (call: ToolCall) => {
+              const { result, artifact } = await executeAgentTool(call, {
+                settings,
+                hosted,
+                onStatus: callbacks.onStatus,
+              })
+              if (artifact) {
+                updateConversation(convId, (c) => ({
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          content: `${m.content}\n\n![${artifact.label}](${artifact.dataUrl})\n\n`,
+                        }
+                      : m,
+                  ),
+                }))
+              }
+              return result
+            },
+          }
+        : undefined
+
       if (hosted) {
         hostedStreamChat(
           {
@@ -335,6 +377,7 @@ export default function Home() {
           },
           callbacks,
           controller.signal,
+          agent,
         )
       } else if (resolved.startsWith('anthropic/')) {
         if (settings.anthropicKey) {
@@ -355,6 +398,7 @@ export default function Home() {
           finalMessages,
           callbacks,
           controller.signal,
+          agent,
         )
       }
     },

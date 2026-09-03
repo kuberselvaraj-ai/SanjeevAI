@@ -194,7 +194,17 @@ export function Markdown({
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
+      // Our own tool pipeline embeds images as data: URLs — allow them.
+      urlTransform={(url) => url}
       components={{
+        img: ({ src, alt }) => (
+          <img
+            src={src}
+            alt={alt ?? ''}
+            className="my-3 max-w-full rounded-xl border border-border shadow-sm"
+            loading="lazy"
+          />
+        ),
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || '')
           const code = String(children).replace(/\n$/, '')

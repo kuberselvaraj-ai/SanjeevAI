@@ -32,6 +32,15 @@ export const WEB_SEARCH_TOOL = {
   function: { name: '$web_search' },
 }
 
+/**
+ * Specialist tools (run_python, generate_image — see lib/agent.ts).
+ * The model calls them mid-stream; we execute locally and feed results back.
+ */
+export interface AgentHooks {
+  tools: unknown[]
+  execute: (call: ToolCall) => Promise<string>
+}
+
 /** Accumulate streamed tool_call deltas (they arrive fragmented by index). */
 export function mergeToolCallDelta(acc: ToolCall[], deltas: unknown[]): ToolCall[] {
   const next = [...acc]
@@ -57,7 +66,7 @@ async function streamRound(
   settings: Settings,
   model: string,
   messages: ApiMessage[],
-  webSearch: boolean,
+  tools: unknown[] | undefined,
   cb: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<{ finishReason: string | null; toolCalls: ToolCall[] }> {
@@ -75,7 +84,7 @@ async function streamRound(
         messages,
         temperature,
         stream: true,
-        ...(webSearch ? { tools: [WEB_SEARCH_TOOL] } : {}),
+        ...(tools?.length ? { tools } : {}),
       }),
       signal,
     })
@@ -167,17 +176,22 @@ export async function streamChat(
   messages: ApiMessage[],
   cb: StreamCallbacks,
   signal?: AbortSignal,
+  agent?: AgentHooks,
 ): Promise<void> {
   const webSearch = settings.webSearch
+  const tools: unknown[] = [
+    ...(webSearch ? [WEB_SEARCH_TOOL] : []),
+    ...(agent?.tools ?? []),
+  ]
   const history = [...messages]
 
   try {
-    for (let round = 0; round < 4; round++) {
+    for (let round = 0; round < (agent ? 8 : 4); round++) {
       const { finishReason, toolCalls } = await streamRound(
         settings,
         model,
         history,
-        webSearch,
+        tools,
         cb,
         signal,
       )
@@ -187,20 +201,38 @@ export async function streamChat(
         return cb.onDone()
       }
 
-      // The model asked to search: echo the call back so Moonshot executes it.
-      cb.onStatus?.('Searching the web…')
       history.push({
         role: 'assistant',
         content: null,
         tool_calls: toolCalls,
       })
       for (const call of toolCalls) {
-        history.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          name: call.function.name,
-          content: call.function.arguments,
-        })
+        if (call.function.name === '$web_search') {
+          // Builtin: echo the call back so Moonshot executes it server-side.
+          cb.onStatus?.('Searching the web…')
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: call.function.arguments,
+          })
+        } else if (agent) {
+          // Specialist: we execute locally and return real results.
+          const result = await agent.execute(call)
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: result,
+          })
+        } else {
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: 'Tool unavailable in this context.',
+          })
+        }
       }
     }
     cb.onStatus?.(null)

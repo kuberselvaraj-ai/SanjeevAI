@@ -5,6 +5,8 @@ export interface CodeRunResult {
   stdout: string
   stderr: string
   results: string[]
+  /** base64 PNGs from matplotlib charts etc. */
+  images?: string[]
   error?: { name: string; value: string }
 }
 
@@ -21,6 +23,9 @@ export async function runCodeDirect(settings: Settings, code: string): Promise<C
       stderr: exec.logs?.stderr?.join('\n') ?? '',
       results: (exec.results ?? [])
         .map((r) => (r as { text?: string }).text)
+        .filter((t): t is string => Boolean(t)),
+      images: (exec.results ?? [])
+        .map((r) => (r as { png?: string }).png)
         .filter((t): t is string => Boolean(t)),
       error: exec.error ? { name: exec.error.name, value: exec.error.value } : undefined,
     }

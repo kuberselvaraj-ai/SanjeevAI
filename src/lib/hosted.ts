@@ -1,5 +1,5 @@
 import type { Attachment } from './types'
-import type { ApiMessage, StreamCallbacks, ToolCall } from './kimi'
+import type { AgentHooks, ApiMessage, StreamCallbacks, ToolCall } from './kimi'
 import { WEB_SEARCH_TOOL, mergeToolCallDelta } from './kimi'
 import { fileToDataUrl, isImageMime, MAX_DOC_SIZE, MAX_IMAGE_SIZE } from './files'
 import { uid } from './storage'
@@ -14,7 +14,7 @@ async function hostedRound(
   model: string,
   messages: ApiMessage[],
   temperature: number,
-  webSearch: boolean,
+  tools: unknown[] | undefined,
   cb: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<{ finishReason: string | null; toolCalls: ToolCall[] }> {
@@ -28,7 +28,7 @@ async function hostedRound(
         model,
         messages,
         temperature,
-        ...(webSearch ? { tools: [WEB_SEARCH_TOOL] } : {}),
+        ...(tools?.length ? { tools } : {}),
       }),
       signal,
     })
@@ -91,20 +91,25 @@ async function hostedRound(
   return { finishReason, toolCalls }
 }
 
-/** Hosted streaming chat with the $web_search tool-call loop (max 4 rounds). */
+/** Hosted streaming chat with the tool-call loop (web search + specialists). */
 export async function hostedStreamChat(
   req: { model: string; messages: ApiMessage[]; temperature: number; webSearch: boolean },
   cb: StreamCallbacks,
   signal?: AbortSignal,
+  agent?: AgentHooks,
 ): Promise<void> {
+  const tools: unknown[] = [
+    ...(req.webSearch ? [WEB_SEARCH_TOOL] : []),
+    ...(agent?.tools ?? []),
+  ]
   const history = [...req.messages]
   try {
-    for (let round = 0; round < 4; round++) {
+    for (let round = 0; round < (agent ? 8 : 4); round++) {
       const { finishReason, toolCalls } = await hostedRound(
         req.model,
         history,
         req.temperature,
-        req.webSearch,
+        tools,
         cb,
         signal,
       )
@@ -112,15 +117,34 @@ export async function hostedStreamChat(
         cb.onStatus?.(null)
         return cb.onDone()
       }
-      cb.onStatus?.('Searching the web…')
       history.push({ role: 'assistant', content: null, tool_calls: toolCalls })
       for (const call of toolCalls) {
-        history.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          name: call.function.name,
-          content: call.function.arguments,
-        })
+        if (call.function.name === '$web_search') {
+          // Builtin: echo back so Moonshot executes it server-side.
+          cb.onStatus?.('Searching the web…')
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: call.function.arguments,
+          })
+        } else if (agent) {
+          // Specialist: we execute locally and return real results.
+          const result = await agent.execute(call)
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: result,
+          })
+        } else {
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.function.name,
+            content: 'Tool unavailable in this context.',
+          })
+        }
       }
     }
     cb.onStatus?.(null)

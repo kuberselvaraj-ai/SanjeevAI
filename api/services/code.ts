@@ -9,6 +9,8 @@ export interface CodeResult {
   stderr: string;
   /** Plain-text representation of the last expression / display() output. */
   results: string[];
+  /** base64 PNGs from matplotlib charts etc. */
+  images?: string[];
   error?: { name: string; value: string };
 }
 
@@ -18,14 +20,18 @@ export async function runPython(code: string): Promise<CodeResult> {
   try {
     const exec = await sandbox.runCode(code, { timeoutMs: 120_000 });
     const results: string[] = [];
+    const images: string[] = [];
     for (const r of exec.results ?? []) {
       const text = (r as { text?: string }).text;
       if (text) results.push(text);
+      const png = (r as { png?: string }).png;
+      if (png) images.push(png);
     }
     return {
       stdout: exec.logs?.stdout?.join("\n") ?? "",
       stderr: exec.logs?.stderr?.join("\n") ?? "",
       results,
+      images,
       error: exec.error
         ? { name: exec.error.name, value: exec.error.value }
         : undefined,
