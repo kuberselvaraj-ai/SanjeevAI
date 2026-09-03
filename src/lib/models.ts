@@ -41,9 +41,10 @@ export const KIMI_MODELS: KimiModel[] = [
 ]
 
 /**
- * Premium Western models, reached through OpenRouter (one key unlocks both).
- * The id is the OpenRouter model slug; the server can remap ids via
- * OPENROUTER_MODEL_CLAUDE / OPENROUTER_MODEL_GPT if OpenRouter renames them.
+ * Premium Western models. First-party keys (ANTHROPIC_API_KEY /
+ * OPENAI_API_KEY) are preferred; OpenRouter covers whichever is missing.
+ * The id doubles as the OpenRouter slug; first-party calls map it to
+ * claude-fable-5 / gpt-5.6-sol (overridable via env on the server).
  */
 export const PREMIUM_CHAT_MODELS: KimiModel[] = [
   {

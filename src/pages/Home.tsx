@@ -9,8 +9,15 @@ import { processFile } from '@/lib/files'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
 import { DEFAULT_SYSTEM_PROMPT, isPremiumModel } from '@/lib/models'
-import { fitMessagesToContext, resolveChatModel, systemPromptFor } from '@/lib/route'
+import {
+  fitMessagesToContext,
+  resolveChatModel,
+  systemPromptFor,
+  type PremiumAvailability,
+} from '@/lib/route'
 import { streamOpenRouter } from '@/lib/openrouter'
+import { streamAnthropic } from '@/lib/anthropic'
+import { streamOpenAi } from '@/lib/openai'
 import { styleInstruction } from '@/lib/styles'
 import { RESEARCH_PROMPT } from '@/lib/research'
 import { memoryContext } from '@/lib/memory'
@@ -68,7 +75,7 @@ export default function Home() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [artifact, setArtifact] = useState<Artifact | null>(null)
   /** Which providers the hosted server has keys for — drives Auto routing. */
-  const [caps, setCaps] = useState<{ premium: boolean } | null>(null)
+  const [caps, setCaps] = useState<{ claude?: boolean; gpt?: boolean } | null>(null)
 
   useEffect(() => {
     if (!hosted) return
@@ -221,11 +228,23 @@ export default function Home() {
       const hasImages = baseMessages.some((m) =>
         (m.attachments ?? []).some((a) => a.kind === 'image' && a.status === 'ready'),
       )
-      const premiumOpen = hosted ? Boolean(caps?.premium) : Boolean(settings.openrouterKey)
-      const route = resolveChatModel(conv.model, lastUser?.content ?? '', hasImages, premiumOpen)
+      // Hosted: server capabilities. Desktop: user's own keys — first-party
+      // keys preferred, one OpenRouter key covers whichever is missing.
+      const premium: PremiumAvailability = hosted
+        ? { claude: Boolean(caps?.claude), gpt: Boolean(caps?.gpt) }
+        : {
+            claude: Boolean(settings.anthropicKey || settings.openrouterKey),
+            gpt: Boolean(settings.openaiKey || settings.openrouterKey),
+          }
+      const route = resolveChatModel(conv.model, lastUser?.content ?? '', hasImages, premium)
       const resolved = route.model
+      const resolvedAvailable = resolved.startsWith('anthropic/')
+        ? premium.claude
+        : resolved.startsWith('openai/')
+          ? premium.gpt
+          : true
 
-      if (isPremiumModel(resolved) && !premiumOpen) {
+      if (isPremiumModel(resolved) && !resolvedAvailable) {
         // Manual premium pick without any key — explain instead of failing oddly.
         updateConversation(convId, (c) => ({
           ...c,
@@ -236,7 +255,7 @@ export default function Home() {
                   streaming: false,
                   error: hosted
                     ? 'Premium models (Claude / GPT) are not enabled on this server yet. Switch to Auto or a Kimi model — K3 handles everything meanwhile.'
-                    : 'Add your OpenRouter key in Settings to chat with Claude / GPT, or switch back to Auto or a Kimi model.',
+                    : 'Add an Anthropic / OpenAI key (or an OpenRouter key) in Settings to chat with Claude / GPT, or switch back to Auto or a Kimi model.',
                 }
               : m,
           ),
@@ -317,8 +336,18 @@ export default function Home() {
           callbacks,
           controller.signal,
         )
-      } else if (isPremiumModel(resolved)) {
-        streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
+      } else if (resolved.startsWith('anthropic/')) {
+        if (settings.anthropicKey) {
+          streamAnthropic(settings, finalMessages, callbacks, controller.signal)
+        } else {
+          streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
+        }
+      } else if (resolved.startsWith('openai/')) {
+        if (settings.openaiKey) {
+          streamOpenAi(settings, finalMessages, callbacks, controller.signal)
+        } else {
+          streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
+        }
       } else {
         streamChat(
           { ...settings, webSearch: useWebSearch },

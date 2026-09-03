@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   falKey: '',
   elevenlabsKey: '',
   openrouterKey: '',
+  anthropicKey: '',
   moonshotBaseUrl: 'https://api.moonshot.ai/v1',
   minimaxBaseUrl: 'https://api.minimax.io/v1',
   temperature: 0.6,

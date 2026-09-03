@@ -43,19 +43,25 @@ export interface RouteDecision {
   pinned: boolean
 }
 
+/** Which premium vendors are reachable (first-party key or OpenRouter). */
+export interface PremiumAvailability {
+  claude: boolean
+  gpt: boolean
+}
+
 /**
  * Resolve which model answers this turn.
  *
  * @param requested   conversation model ('auto' or an explicit id)
  * @param text        the latest user message
  * @param hasImages   image attachments force Kimi K3 (vision)
- * @param premiumOpen whether an OpenRouter key is configured (server-side or desktop)
+ * @param premium     per-vendor availability (server capabilities or desktop keys)
  */
 export function resolveChatModel(
   requested: string,
   text: string,
   hasImages: boolean,
-  premiumOpen: boolean,
+  premium: PremiumAvailability,
 ): RouteDecision {
   if (requested !== AUTO_MODEL) return { model: requested, task: 'chat', pinned: true }
   if (hasImages) return { model: 'kimi-k3', task: 'chat', pinned: true }
@@ -70,20 +76,20 @@ export function resolveChatModel(
       return { model: 'kimi-k3', task, pinned: false }
     case 'math':
       // GPT-5.6 Sol — strongest step-by-step reasoning.
-      return {
-        model: premiumOpen ? 'openai/gpt-5.6-sol' : 'kimi-k3',
-        task,
-        pinned: !premiumOpen,
-      }
+      return premium.gpt
+        ? { model: 'openai/gpt-5.6-sol', task, pinned: false }
+        : { model: 'kimi-k3', task, pinned: true }
     case 'writing':
+      // Claude Fable 5 — best writing quality.
+      return premium.claude
+        ? { model: 'anthropic/claude-fable-5', task, pinned: false }
+        : { model: 'kimi-k3', task, pinned: true }
     case 'chat':
     default:
-      // Claude Fable 5 — best writing quality & conversation.
-      return {
-        model: premiumOpen ? 'anthropic/claude-fable-5' : 'kimi-k3',
-        task,
-        pinned: !premiumOpen,
-      }
+      // Claude first for conversation; GPT as the premium understudy.
+      if (premium.claude) return { model: 'anthropic/claude-fable-5', task, pinned: false }
+      if (premium.gpt) return { model: 'openai/gpt-5.6-sol', task, pinned: false }
+      return { model: 'kimi-k3', task, pinned: true }
   }
 }
 

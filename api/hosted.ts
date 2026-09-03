@@ -11,6 +11,8 @@ import {
   openRouterChatStream,
   openrouterConfigured,
 } from "./services/openrouter";
+import { anthropicChatStream, anthropicConfigured } from "./services/anthropic";
+import { openAiChatStream, openaiConfigured } from "./services/openai";
 import { minimaxConfigured } from "./services/minimax";
 import { falVideoConfigured } from "./services/fal-video";
 
@@ -34,7 +36,8 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
   // ── Which providers the server has keys for (drives Auto routing) ──────
   app.get("/api/hosted/capabilities", (c) =>
     c.json({
-      premium: openrouterConfigured(),
+      claude: anthropicConfigured() || openrouterConfigured(),
+      gpt: openaiConfigured() || openrouterConfigured(),
       voice: elevenlabsConfigured() || dashscopeConfigured(),
       video: minimaxConfigured() || falVideoConfigured(),
     }),
@@ -63,13 +66,20 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       return c.json({ error: "model and messages are required" }, 400);
     }
 
-    // Premium models (Claude / GPT) relay through OpenRouter instead of Moonshot.
+    // Premium models (Claude / GPT): first-party keys preferred, OpenRouter fallback.
     const premium = isPremiumChatModel(model);
-    if (premium && !openrouterConfigured()) {
+    const isClaude = model.startsWith("anthropic/");
+    const isGpt = model.startsWith("openai/");
+    const premiumReady = isClaude
+      ? anthropicConfigured() || openrouterConfigured()
+      : isGpt
+        ? openaiConfigured() || openrouterConfigured()
+        : openrouterConfigured();
+    if (premium && !premiumReady) {
       return c.json(
         {
           error:
-            "Premium models (Claude Fable 5, GPT-5.6 Sol) are not configured on the server yet — the site owner needs to add an OpenRouter API key. Meanwhile, Kimi K3 answers everything.",
+            "Premium models (Claude Fable 5, GPT-5.6 Sol) are not configured on the server yet — the site owner needs to add an Anthropic / OpenAI key (or an OpenRouter key). Meanwhile, Kimi K3 answers everything.",
         },
         503,
       );
@@ -103,8 +113,17 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       }
     }
 
-    const upstream = premium
-      ? await openRouterChatStream({ model, messages, temperature }).catch(
+    // Pick the upstream: first-party key wins, OpenRouter covers the gaps.
+    const premiumUpstream = () => {
+      if (isClaude && anthropicConfigured())
+        return { label: "Anthropic", call: anthropicChatStream({ messages: messages as never }) };
+      if (isGpt && openaiConfigured())
+        return { label: "OpenAI", call: openAiChatStream({ messages, temperature }) };
+      return { label: "OpenRouter", call: openRouterChatStream({ model, messages, temperature }) };
+    };
+    const chosen = premium ? premiumUpstream() : null;
+    const upstream = chosen
+      ? await chosen.call.catch(
           (e) => new Response(null, { status: 502, statusText: (e as Error).message }),
         )
       : await openChatStream({ model, messages, temperature, tools }).catch(
@@ -119,7 +138,7 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
         detail = upstream.statusText;
       }
       return c.json(
-        { error: `${premium ? "OpenRouter" : "Kimi"} API error ${upstream.status}: ${detail}` },
+        { error: `${chosen ? chosen.label : "Kimi"} API error ${upstream.status}: ${detail}` },
         502,
       );
     }

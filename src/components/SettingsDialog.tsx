@@ -115,7 +115,7 @@ export function SettingsDialog({
               />
 
               <SecretField
-                label="OpenAI API key (GPT Image 2 — image studio)"
+                label="OpenAI API key (GPT-5.6 chat + GPT Image 2)"
                 value={draft.openaiKey}
                 onChange={(v) => set('openaiKey', v)}
                 placeholder="sk-..."
@@ -178,12 +178,21 @@ export function SettingsDialog({
               />
 
               <SecretField
-                label="OpenRouter key (Claude Fable 5 & GPT-5.6 Sol chat)"
+                label="Anthropic key (Claude Fable 5 chat — best writing)"
+                value={draft.anthropicKey}
+                onChange={(v) => set('anthropicKey', v)}
+                placeholder="sk-ant-..."
+                helpUrl="https://console.anthropic.com/"
+                helpText="console.anthropic.com → API keys (first-party, best rates)"
+              />
+
+              <SecretField
+                label="OpenRouter key (fallback covering both Claude & GPT)"
                 value={draft.openrouterKey}
                 onChange={(v) => set('openrouterKey', v)}
                 placeholder="sk-or-..."
                 helpUrl="https://openrouter.ai/keys"
-                helpText="openrouter.ai → Keys — one key unlocks Claude + GPT for Auto mode"
+                helpText="openrouter.ai → Keys — used for any premium model missing a first-party key"
               />
             </>
           )}
