@@ -212,9 +212,9 @@ export function ChatView({
               How can I help you today?
             </h2>
             <p className="mt-3 max-w-md text-center text-sm leading-6 text-muted-foreground">
-              Chat with Kimi K3, Kimi Code and more — switch models any time from the
-              composer below. Attach PDFs, Word docs, spreadsheets or images with the
-              paperclip and ask questions about them.
+              Chat with Kimi K3, Claude Fable 5, GPT-5.6 Sol and more — Auto mode picks
+              the best model for each task, and the conversation continues seamlessly when
+              it switches. Attach PDFs, Word docs, spreadsheets or images with the paperclip.
             </p>
             <div className="mt-8 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
               {SUGGESTIONS.map((s) => (

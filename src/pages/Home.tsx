@@ -8,7 +8,9 @@ import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
-import { DEFAULT_SYSTEM_PROMPT } from '@/lib/models'
+import { DEFAULT_SYSTEM_PROMPT, isPremiumModel } from '@/lib/models'
+import { fitMessagesToContext, resolveChatModel, systemPromptFor } from '@/lib/route'
+import { streamOpenRouter } from '@/lib/openrouter'
 import { styleInstruction } from '@/lib/styles'
 import { RESEARCH_PROMPT } from '@/lib/research'
 import { memoryContext } from '@/lib/memory'
@@ -65,6 +67,16 @@ export default function Home() {
   const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [artifact, setArtifact] = useState<Artifact | null>(null)
+  /** Which providers the hosted server has keys for — drives Auto routing. */
+  const [caps, setCaps] = useState<{ premium: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!hosted) return
+    fetch('/api/hosted/capabilities')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setCaps(j))
+      .catch(() => {})
+  }, [hosted])
 
   const abortRef = useRef<AbortController | null>(null)
 
@@ -150,7 +162,7 @@ export default function Home() {
   /** Convert stored messages into the API payload: document extracts become
    *  system context, images become vision parts on their user message. */
   const buildApiMessages = useCallback(
-    (conv: Conversation, messages: ChatMessage[]): ApiMessage[] => {
+    (conv: Conversation, messages: ChatMessage[], model: string): ApiMessage[] => {
       const now = new Date()
       const timeLine = `Current date and time: ${now.toLocaleString()} (timezone: ${
         Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -161,7 +173,7 @@ export default function Home() {
       const out: ApiMessage[] = [
         {
           role: 'system',
-          content: `${conv.systemPrompt}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}\n\n${timeLine}`,
+          content: `${systemPromptFor(model, conv.systemPrompt)}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}\n\n${timeLine}`,
         },
       ]
       for (const m of messages) {
@@ -201,7 +213,53 @@ export default function Home() {
       setWorkspace(null)
       const controller = new AbortController()
       abortRef.current = controller
-      const apiMessages = buildApiMessages(conv, baseMessages)
+
+      // ── Best-for-task routing ─────────────────────────────────────────
+      // The transcript lives in our DB; models are stateless, so switching
+      // providers mid-chat just replays the same history to the new brain.
+      const lastUser = [...baseMessages].reverse().find((m) => m.role === 'user')
+      const hasImages = baseMessages.some((m) =>
+        (m.attachments ?? []).some((a) => a.kind === 'image' && a.status === 'ready'),
+      )
+      const premiumOpen = hosted ? Boolean(caps?.premium) : Boolean(settings.openrouterKey)
+      const route = resolveChatModel(conv.model, lastUser?.content ?? '', hasImages, premiumOpen)
+      const resolved = route.model
+
+      if (isPremiumModel(resolved) && !premiumOpen) {
+        // Manual premium pick without any key — explain instead of failing oddly.
+        updateConversation(convId, (c) => ({
+          ...c,
+          messages: c.messages.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  streaming: false,
+                  error: hosted
+                    ? 'Premium models (Claude / GPT) are not enabled on this server yet. Switch to Auto or a Kimi model — K3 handles everything meanwhile.'
+                    : 'Add your OpenRouter key in Settings to chat with Claude / GPT, or switch back to Auto or a Kimi model.',
+                }
+              : m,
+          ),
+        }))
+        setStreaming(false)
+        return
+      }
+
+      // Label the reply with the model that actually answers (matters in Auto).
+      if (resolved !== conv.model) {
+        updateConversation(convId, (c) => ({
+          ...c,
+          messages: c.messages.map((m) => (m.id === assistantId ? { ...m, model: resolved } : m)),
+        }))
+      }
+
+      const apiMessages = buildApiMessages(conv, baseMessages, resolved)
+      // Premium models: smaller context, higher price — slide the window.
+      const finalMessages = isPremiumModel(resolved)
+        ? fitMessagesToContext(apiMessages)
+        : apiMessages
+      // $web_search is a Moonshot builtin — not available through OpenRouter.
+      const useWebSearch = (settings.webSearch || settings.deepResearch) && !isPremiumModel(resolved)
 
       const callbacks = {
         onToken: (t: string) =>
@@ -251,25 +309,27 @@ export default function Home() {
       if (hosted) {
         hostedStreamChat(
           {
-            model: conv.model,
-            messages: apiMessages,
+            model: resolved,
+            messages: finalMessages,
             temperature: settings.temperature,
-            webSearch: settings.webSearch || settings.deepResearch,
+            webSearch: useWebSearch,
           },
           callbacks,
           controller.signal,
         )
+      } else if (isPremiumModel(resolved)) {
+        streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
       } else {
         streamChat(
-          { ...settings, webSearch: settings.webSearch || settings.deepResearch },
-          conv.model,
-          apiMessages,
+          { ...settings, webSearch: useWebSearch },
+          resolved,
+          finalMessages,
           callbacks,
           controller.signal,
         )
       }
     },
-    [buildApiMessages, hosted, settings, trpcUtils, updateConversation],
+    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation],
   )
 
   const stop = useCallback(() => {

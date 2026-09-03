@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic } from 'lucide-react'
-import { KIMI_MODELS, modelLabel } from '@/lib/models'
+import { AUTO_ENTRY, KIMI_MODELS, PREMIUM_CHAT_MODELS, modelLabel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
 
 export interface PendingFile {
@@ -324,30 +324,48 @@ export function Composer({
                     <div className="border-b border-border px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Model
                     </div>
-                    {KIMI_MODELS.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => {
-                          onModelChange(m.id)
-                          setModelOpen(false)
-                        }}
-                        className={`flex w-full items-start justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent ${
-                          m.id === model ? 'bg-accent/60' : ''
-                        }`}
-                      >
-                        <span>
-                          <span className="block text-sm font-medium">{m.label}</span>
-                          <span className="block text-xs text-muted-foreground">{m.description}</span>
-                        </span>
-                        {m.badge && (
-                          <span className="mt-0.5 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                            {m.badge}
-                          </span>
+                    {(
+                      [
+                        { heading: null, items: [AUTO_ENTRY] },
+                        { heading: 'Kimi', items: KIMI_MODELS },
+                        { heading: 'Premium · via OpenRouter', items: PREMIUM_CHAT_MODELS },
+                      ] as const
+                    ).map((section, si) => (
+                      <div key={si}>
+                        {section.heading && (
+                          <div className="border-t border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {section.heading}
+                          </div>
                         )}
-                      </button>
+                        {section.items.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              onModelChange(m.id)
+                              setModelOpen(false)
+                            }}
+                            className={`flex w-full items-start justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent ${
+                              m.id === model ? 'bg-accent/60' : ''
+                            }`}
+                          >
+                            <span>
+                              <span className="block text-sm font-medium">{m.label}</span>
+                              <span className="block text-xs text-muted-foreground">
+                                {m.description}
+                              </span>
+                            </span>
+                            {m.badge && (
+                              <span className="mt-0.5 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                {m.badge}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     ))}
                     <div className="border-t border-border px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-                      Images are understood by Kimi K3. Documents work with every model.
+                      Auto routes every message to the strongest model for the task — the
+                      conversation continues seamlessly. Images always go to Kimi K3 (vision).
                     </div>
                   </div>
                 )}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X, Eye, EyeOff, ExternalLink } from 'lucide-react'
 import type { Settings } from '@/lib/types'
-import { KIMI_MODELS } from '@/lib/models'
+import { CHAT_MODELS } from '@/lib/models'
 
 function SecretField({
   label,
@@ -176,6 +176,15 @@ export function SettingsDialog({
                 helpUrl="https://elevenlabs.io/"
                 helpText="elevenlabs.io → Profile → API key (free tier works)"
               />
+
+              <SecretField
+                label="OpenRouter key (Claude Fable 5 & GPT-5.6 Sol chat)"
+                value={draft.openrouterKey}
+                onChange={(v) => set('openrouterKey', v)}
+                placeholder="sk-or-..."
+                helpUrl="https://openrouter.ai/keys"
+                helpText="openrouter.ai → Keys — one key unlocks Claude + GPT for Auto mode"
+              />
             </>
           )}
 
@@ -186,12 +195,12 @@ export function SettingsDialog({
               onChange={(e) => set('defaultModel', e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
             >
-              {KIMI_MODELS.map((m) => (
+              {CHAT_MODELS.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label} ({m.id})
                 </option>
               ))}
-              {!KIMI_MODELS.some((m) => m.id === draft.defaultModel) && (
+              {!CHAT_MODELS.some((m) => m.id === draft.defaultModel) && (
                 <option value={draft.defaultModel}>{draft.defaultModel}</option>
               )}
             </select>

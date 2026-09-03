@@ -6,6 +6,13 @@ import { getMonthUsage, recordUsage } from "./queries/usage";
 import { extractFileText, moonshotKey, openChatStream } from "./services/moonshot";
 import { dashscopeConfigured, qwenSpeak, qwenTranscribe } from "./services/dashscope";
 import { elevenlabsConfigured, elevenSpeak, elevenTranscribe } from "./services/elevenlabs";
+import {
+  isPremiumChatModel,
+  openRouterChatStream,
+  openrouterConfigured,
+} from "./services/openrouter";
+import { minimaxConfigured } from "./services/minimax";
+import { falVideoConfigured } from "./services/fal-video";
 
 /**
  * Hosted-mode API: the browser talks to these endpoints, the server calls
@@ -24,6 +31,15 @@ interface ChatRequestBody {
 }
 
 export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
+  // ── Which providers the server has keys for (drives Auto routing) ──────
+  app.get("/api/hosted/capabilities", (c) =>
+    c.json({
+      premium: openrouterConfigured(),
+      voice: elevenlabsConfigured() || dashscopeConfigured(),
+      video: minimaxConfigured() || falVideoConfigured(),
+    }),
+  );
+
   // ── Streaming chat relay with per-user token metering ──────────────────
   app.post("/api/hosted/chat", async (c) => {
     let user;
@@ -45,6 +61,18 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     const { model, messages, temperature, tools } = body;
     if (!model || !Array.isArray(messages)) {
       return c.json({ error: "model and messages are required" }, 400);
+    }
+
+    // Premium models (Claude / GPT) relay through OpenRouter instead of Moonshot.
+    const premium = isPremiumChatModel(model);
+    if (premium && !openrouterConfigured()) {
+      return c.json(
+        {
+          error:
+            "Premium models (Claude Fable 5, GPT-5.6 Sol) are not configured on the server yet — the site owner needs to add an OpenRouter API key. Meanwhile, Kimi K3 answers everything.",
+        },
+        503,
+      );
     }
 
     const totalChars = messages.reduce(
@@ -75,9 +103,13 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       }
     }
 
-    const upstream = await openChatStream({ model, messages, temperature, tools }).catch(
-      (e) => new Response(null, { status: 502, statusText: (e as Error).message }),
-    );
+    const upstream = premium
+      ? await openRouterChatStream({ model, messages, temperature }).catch(
+          (e) => new Response(null, { status: 502, statusText: (e as Error).message }),
+        )
+      : await openChatStream({ model, messages, temperature, tools }).catch(
+          (e) => new Response(null, { status: 502, statusText: (e as Error).message }),
+        );
     if (!upstream.ok || !upstream.body) {
       let detail = "";
       try {
@@ -86,7 +118,10 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       } catch {
         detail = upstream.statusText;
       }
-      return c.json({ error: `Kimi API error ${upstream.status}: ${detail}` }, 502);
+      return c.json(
+        { error: `${premium ? "OpenRouter" : "Kimi"} API error ${upstream.status}: ${detail}` },
+        502,
+      );
     }
 
     // Relay upstream SSE to the client; keep a tail buffer for usage accounting.
