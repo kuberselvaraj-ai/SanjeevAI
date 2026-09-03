@@ -7,6 +7,8 @@ import {
   MessageSquare,
   Play,
   Plus,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   X,
   XCircle,
@@ -97,6 +99,12 @@ export function BriefsView({
     },
   })
   const runNowMutation = trpc.schedules.runNow.useMutation({ onSuccess: invalidate })
+  const feedbackMutation = trpc.schedules.setFeedback.useMutation({
+    onSuccess: () => {
+      if (selectedRunId !== null)
+        void utils.schedules.runContent.invalidate({ runId: selectedRunId })
+    },
+  })
 
   // Create-form state
   const [prompt, setPrompt] = useState('')
@@ -275,25 +283,57 @@ export function BriefsView({
                     <p className="py-10 text-center text-[13px] text-muted-foreground">Loading…</p>
                   ) : contentQuery.data ? (
                     <div className="mx-auto max-w-2xl">
-                      <div className="mb-4 flex items-center justify-between">
-                        <span className="text-[12px] text-muted-foreground">
-                          {fmtDate(contentQuery.data.createdAt)}
-                        </span>
-                        {contentQuery.data.status === 'done' && contentQuery.data.content && (
-                          <button
-                            onClick={() =>
-                              onOpenInChat({
-                                title: selected.title,
-                                prompt: selected.prompt,
-                                content: contentQuery.data.content ?? '',
-                              })
-                            }
-                            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[12px] font-medium hover:bg-accent"
-                          >
-                            <MessageSquare size={12} />
-                            Continue in chat
-                          </button>
-                        )}
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <span className="text-[12px] text-muted-foreground">
+                            {fmtDate(contentQuery.data.createdAt)}
+                          </span>
+                          {contentQuery.data.refinedBy && (
+                            <span className="ml-2 text-[11px] text-muted-foreground/70">
+                              · Refined with {contentQuery.data.refinedBy}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {contentQuery.data.status === 'done' && (
+                            <>
+                              {(['up', 'down'] as const).map((v) => (
+                                <button
+                                  key={v}
+                                  title={v === 'up' ? 'This hit the mark' : 'This missed'}
+                                  onClick={() =>
+                                    feedbackMutation.mutate({
+                                      runId: contentQuery.data.id,
+                                      feedback: contentQuery.data.feedback === v ? null : v,
+                                    })
+                                  }
+                                  className={`rounded-lg p-1.5 transition-colors ${
+                                    contentQuery.data.feedback === v
+                                      ? 'bg-primary/10 text-primary'
+                                      : 'text-muted-foreground hover:bg-accent'
+                                  }`}
+                                >
+                                  {v === 'up' ? <ThumbsUp size={13} /> : <ThumbsDown size={13} />}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          {contentQuery.data.status === 'done' && contentQuery.data.content && (
+                            <button
+                              onClick={() =>
+                                onOpenInChat({
+                                  title: selected.title,
+                                  prompt: selected.prompt,
+                                  content: contentQuery.data.content ?? '',
+                                })
+                              }
+                              className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[12px] font-medium hover:bg-accent"
+                            >
+                              <MessageSquare size={12} />
+                              Continue in chat
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {contentQuery.data.status === 'failed' ? (
                         <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">

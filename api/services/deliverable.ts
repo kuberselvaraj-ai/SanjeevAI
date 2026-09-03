@@ -12,6 +12,9 @@
 import { moonshotKey } from "./moonshot";
 import { runPython } from "./code";
 import { falGenerateImage } from "./fal";
+import { anthropicConfigured } from "./anthropic";
+import { openaiConfigured } from "./openai";
+import { openrouterConfigured, openrouterKey } from "./openrouter";
 
 const MODEL = "kimi-k3";
 const MAX_ROUNDS = 6;
@@ -76,6 +79,130 @@ export interface DeliverableResult {
   inputTokens: number;
   outputTokens: number;
   imageCount: number;
+  /** council pass: name of the premium model that refined the draft */
+  refinedBy?: string;
+}
+
+// ── Council: cross-vendor refinement for scheduled runs ──────────────────
+// When a premium key lives on the server, a second vendor's model
+// fact-checks and polishes the deliverable before it lands in the inbox.
+// Runs BEFORE images are appended, so the critic never sees data URLs.
+
+const COUNCIL_SYSTEM_PROMPT = `You are the final reviewer inside Sanjeev AI. Another AI system researched and drafted the deliverable below using web search, code execution and image generation. Produce the improved final version: verify factual and numeric claims against the evidence contained in the draft, fix weak reasoning, tighten the structure and prose, and remove redundancy. Rules: return ONLY the finished deliverable in polished Markdown; never mention the draft, the review, tools, or other AI systems; answer in the language of the original request.`;
+
+interface CouncilResult {
+  text: string;
+  label: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+async function anthropicOnce(system: string, user: string): Promise<CouncilResult> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY!,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || "claude-fable-5",
+      max_tokens: 16000,
+      system,
+      messages: [{ role: "user", content: user }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
+  const json = (await res.json()) as {
+    content?: { type: string; text?: string }[];
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  const text = (json.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
+  if (!text.trim()) throw new Error("Anthropic returned no text");
+  return {
+    text,
+    label: "Claude Fable 5",
+    inputTokens: json.usage?.input_tokens ?? 0,
+    outputTokens: json.usage?.output_tokens ?? 0,
+  };
+}
+
+async function openAiStyleOnce(
+  url: string,
+  key: string,
+  model: string,
+  label: string,
+  system: string,
+  user: string,
+  extraHeaders?: Record<string, string>,
+): Promise<CouncilResult> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, ...extraHeaders },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`${label} ${res.status}`);
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  const text = json.choices?.[0]?.message?.content ?? "";
+  if (!text.trim()) throw new Error(`${label} returned no text`);
+  return {
+    text,
+    label,
+    inputTokens: json.usage?.prompt_tokens ?? 0,
+    outputTokens: json.usage?.completion_tokens ?? 0,
+  };
+}
+
+/**
+ * Cross-vendor second opinion. Returns null on any failure — the draft
+ * always stands on its own.
+ */
+export async function refineWithCouncil(
+  prompt: string,
+  draft: string,
+): Promise<CouncilResult | null> {
+  const user = `Original request:\n"""\n${prompt}\n"""\n\nDraft deliverable, with the evidence gathered:\n"""\n${draft}\n"""`;
+  try {
+    let result: CouncilResult;
+    if (anthropicConfigured()) {
+      result = await anthropicOnce(COUNCIL_SYSTEM_PROMPT, user);
+    } else if (openaiConfigured()) {
+      result = await openAiStyleOnce(
+        "https://api.openai.com/v1/chat/completions",
+        process.env.OPENAI_API_KEY!,
+        process.env.OPENAI_MODEL || "gpt-5.6-sol",
+        "GPT-5.6 Sol",
+        COUNCIL_SYSTEM_PROMPT,
+        user,
+      );
+    } else if (openrouterConfigured()) {
+      result = await openAiStyleOnce(
+        "https://openrouter.ai/api/v1/chat/completions",
+        openrouterKey(),
+        process.env.OPENROUTER_MODEL_CLAUDE || "anthropic/claude-fable-5",
+        "Claude Fable 5",
+        COUNCIL_SYSTEM_PROMPT,
+        user,
+        { "HTTP-Referer": "https://sanjeevai.com", "X-Title": "Sanjeev AI" },
+      );
+    } else {
+      return null;
+    }
+    // Sanity guard: a drastically shorter "refinement" is a truncation, not an improvement.
+    if (result.text.length < draft.length * 0.4) return null;
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 function truncate(s: string): string {
@@ -173,6 +300,7 @@ async function executeTool(
 export async function runDeliverable(
   prompt: string,
   previousContent?: string,
+  opts?: { council?: boolean },
 ): Promise<DeliverableResult> {
   const userText = previousContent
     ? `${prompt}\n\nPrevious edition (update it with fresh data; lead with what changed):\n"""\n${previousContent.slice(0, MAX_PREVIOUS_CHARS)}\n"""`
@@ -222,10 +350,23 @@ export async function runDeliverable(
   if (!finalContent.trim()) {
     throw new Error("Pipeline produced no deliverable after all rounds");
   }
+
+  // Council pass — before images are appended, so the critic sees text only.
+  let refinedBy: string | undefined;
+  if (opts?.council) {
+    const council = await refineWithCouncil(prompt, finalContent);
+    if (council) {
+      finalContent = council.text;
+      refinedBy = council.label;
+      inputTokens += council.inputTokens;
+      outputTokens += council.outputTokens;
+    }
+  }
+
   if (images.length) {
     finalContent +=
       "\n" +
       images.map((i) => `\n![${i.label}](${i.dataUrl})\n`).join("");
   }
-  return { content: finalContent, inputTokens, outputTokens, imageCount: images.length };
+  return { content: finalContent, inputTokens, outputTokens, imageCount: images.length, refinedBy };
 }

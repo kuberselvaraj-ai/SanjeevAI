@@ -103,11 +103,25 @@ export async function executeSchedule(schedule: schema.Schedule): Promise<number
       .orderBy(desc(schema.scheduleRuns.createdAt))
       .limit(1);
 
-    const result = await runDeliverable(schedule.prompt, prev[0]?.content ?? undefined);
+    // Council is a pro-tier luxury: only refine when the plan pays for it.
+    const [owner] = await db
+      .select({ plan: schema.users.plan })
+      .from(schema.users)
+      .where(eq(schema.users.id, schedule.userId))
+      .limit(1);
+
+    const result = await runDeliverable(schedule.prompt, prev[0]?.content ?? undefined, {
+      council: owner?.plan === "pro",
+    });
 
     await db
       .update(schema.scheduleRuns)
-      .set({ status: "done", content: result.content, completedAt: new Date() })
+      .set({
+        status: "done",
+        content: result.content,
+        refinedBy: result.refinedBy ?? null,
+        completedAt: new Date(),
+      })
       .where(eq(schema.scheduleRuns.id, runId));
     await db
       .update(schema.schedules)

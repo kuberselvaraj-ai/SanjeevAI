@@ -127,6 +127,18 @@ export const schedulesRouter = createRouter({
       return { runId };
     }),
 
+  /** Level 5 signal tap: thumbs up/down on a finished run. */
+  setFeedback: authedQuery
+    .input(z.object({ runId: z.number(), feedback: z.enum(["up", "down"]).nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      await db
+        .update(schema.scheduleRuns)
+        .set({ feedback: input.feedback })
+        .where(and(eq(schema.scheduleRuns.id, input.runId), eq(schema.scheduleRuns.userId, ctx.user.id)));
+      return { ok: true };
+    }),
+
   /** Run history for one schedule — excerpts only, no full content. */
   runs: authedQuery
     .input(z.object({ scheduleId: z.string() }))
@@ -137,6 +149,8 @@ export const schedulesRouter = createRouter({
           id: schema.scheduleRuns.id,
           status: schema.scheduleRuns.status,
           error: schema.scheduleRuns.error,
+          refinedBy: schema.scheduleRuns.refinedBy,
+          feedback: schema.scheduleRuns.feedback,
           readAt: schema.scheduleRuns.readAt,
           createdAt: schema.scheduleRuns.createdAt,
           completedAt: schema.scheduleRuns.completedAt,

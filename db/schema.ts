@@ -126,6 +126,10 @@ export const scheduleRuns = mysqlTable("schedule_runs", {
   /** finished deliverable, Markdown with embedded data-URL images */
   content: longtext("content"),
   error: text("error"),
+  /** council pass: premium model that refined this run (pro plans) */
+  refinedBy: varchar("refinedBy", { length: 40 }),
+  /** Level 5 signal tap: did this deliverable hit the mark? */
+  feedback: mysqlEnum("feedback", ["up", "down"]),
   readAt: timestamp("readAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
