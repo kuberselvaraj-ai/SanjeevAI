@@ -6,6 +6,7 @@ import { adminRouter } from "./admin-router";
 import { inviteRouter } from "./invite-router";
 import { imageRouter } from "./image-router";
 import { codeRouter } from "./code-router";
+import { schedulesRouter } from "./schedules-router";
 import { shareRouter } from "./share-router";
 import { createRouter, publicQuery } from "./middleware";
 
@@ -17,6 +18,7 @@ export const appRouter = createRouter({
   video: videoRouter,
   image: imageRouter,
   code: codeRouter,
+  schedules: schedulesRouter,
   share: shareRouter,
   admin: adminRouter,
   invite: inviteRouter,

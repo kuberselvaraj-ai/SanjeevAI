@@ -1,10 +1,10 @@
-import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost } from 'lucide-react'
+import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost, CalendarClock } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import type { Conversation } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
 
-export type View = 'chat' | 'video' | 'image'
+export type View = 'chat' | 'video' | 'image' | 'briefs'
 
 export interface SidebarUser {
   name?: string | null
@@ -31,6 +31,7 @@ export function Sidebar({
   hosted = false,
   user = null,
   usageSummary = null,
+  briefsUnread = 0,
   onLogout,
 }: {
   view: View
@@ -51,6 +52,8 @@ export function Sidebar({
   hosted?: boolean
   user?: SidebarUser | null
   usageSummary?: string | null
+  /** unread scheduled-brief runs — red bubble on the Briefs tab */
+  briefsUnread?: number
   onLogout?: () => void
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -119,6 +122,7 @@ export function Sidebar({
           {(
             [
               { id: 'chat', label: 'Chat', icon: MessageSquare },
+              ...(hosted ? [{ id: 'briefs', label: 'Briefs', icon: CalendarClock } as const] : []),
               { id: 'image', label: 'Images', icon: ImageIcon },
               { id: 'video', label: 'Video', icon: Clapperboard },
             ] as const
@@ -126,7 +130,7 @@ export function Sidebar({
             <button
               key={tab.id}
               onClick={() => onViewChange(tab.id)}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
+              className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
                 view === tab.id
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -134,6 +138,11 @@ export function Sidebar({
             >
               <tab.icon size={14} />
               {tab.label}
+              {tab.id === 'briefs' && briefsUnread > 0 && (
+                <span className="absolute -right-0.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9.5px] font-semibold text-white">
+                  {briefsUnread}
+                </span>
+              )}
             </button>
           ))}
         </div>

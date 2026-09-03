@@ -38,6 +38,7 @@ import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
 import { speakText, transcribeAudio, voiceAvailable } from '@/lib/voice'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { BriefsView } from '@/components/BriefsView'
 import { VideoView } from '@/components/VideoView'
 import { ImageView } from '@/components/ImageView'
 import { SearchPalette } from '@/components/SearchPalette'
@@ -118,6 +119,36 @@ export default function Home() {
   }, [])
 
   // ----- chat actions -----
+  // Unread scheduled-brief runs — red bubble on the Briefs tab (hosted only).
+  const briefsUnreadQuery = trpc.schedules.unreadCount.useQuery(undefined, {
+    enabled: hosted,
+    refetchInterval: 30_000,
+  })
+
+  // A finished brief becomes a real conversation: the schedule's prompt as
+  // the user message, the deliverable as the reply — full context continues.
+  const openBriefInChat = useCallback(
+    ({ title, prompt, content }: { title: string; prompt: string; content: string }) => {
+      const now = Date.now()
+      const conv: Conversation = {
+        id: uid(),
+        title: title || 'Scheduled brief',
+        model: AUTO_MODEL,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        messages: [
+          { id: uid(), role: 'user', content: prompt, createdAt: now },
+          { id: uid(), role: 'assistant', content, model: 'kimi-k3', createdAt: now + 1 },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      }
+      setConversations((prev) => [conv, ...prev])
+      setActiveId(conv.id)
+      setView('chat')
+    },
+    [],
+  )
+
   const newChat = useCallback(
     (temp = false) => {
       abortRef.current?.abort()
@@ -861,10 +892,17 @@ export default function Home() {
         hosted={hosted}
         user={user ? { name: user.name, email: user.email, role: user.role } : null}
         usageSummary={usageSummary}
+        briefsUnread={briefsUnreadQuery.data ?? 0}
         onLogout={logout}
       />
 
-      {view === 'image' ? (
+      {view === 'briefs' ? (
+        <BriefsView
+          dark={settings.theme === 'dark'}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenInChat={openBriefInChat}
+        />
+      ) : view === 'image' ? (
         <ImageView
           settings={settings}
           hosted={hosted}

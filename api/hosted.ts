@@ -15,6 +15,7 @@ import { anthropicChatStream, anthropicConfigured } from "./services/anthropic";
 import { openAiChatStream, openaiConfigured } from "./services/openai";
 import { minimaxConfigured } from "./services/minimax";
 import { falVideoConfigured } from "./services/fal-video";
+import { startScheduler } from "./scheduler";
 
 /**
  * Hosted-mode API: the browser talks to these endpoints, the server calls
@@ -33,6 +34,9 @@ interface ChatRequestBody {
 }
 
 export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
+  // Level 4: scheduled deliverables run here, browser closed or not.
+  startScheduler();
+
   // ── Which providers the server has keys for (drives Auto routing) ──────
   app.get("/api/hosted/capabilities", (c) =>
     c.json({

@@ -4,6 +4,7 @@ import {
   serial,
   varchar,
   text,
+  longtext,
   timestamp,
   bigint,
   int,
@@ -83,3 +84,52 @@ export const shareLinks = mysqlTable("share_links", {
 
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type InsertShareLink = typeof shareLinks.$inferInsert;
+
+/**
+ * Scheduled deliverables — "every Monday, refresh this analysis".
+ * The server runs the specialist pipeline on a timer; results land in
+ * schedule_runs and surface in the user's Briefs inbox.
+ */
+export const schedules = mysqlTable("schedules", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  userId: bigint("userId", { mode: "number", unsigned: true })
+    .notNull()
+    .references(() => users.id),
+  title: varchar("title", { length: 120 }).notNull(),
+  prompt: text("prompt").notNull(),
+  frequency: mysqlEnum("frequency", ["daily", "weekly"]).notNull(),
+  /** 0=Sunday … 6=Saturday — weekly only */
+  weekday: int("weekday"),
+  /** wall-clock time in `timezone` */
+  hour: int("hour").notNull(),
+  minute: int("minute").notNull(),
+  timezone: varchar("timezone", { length: 64 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  lastRunAt: timestamp("lastRunAt"),
+  nextRunAt: timestamp("nextRunAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Schedule = typeof schedules.$inferSelect;
+export type InsertSchedule = typeof schedules.$inferInsert;
+
+/** One execution of a schedule — the deliverable itself lives in `content`. */
+export const scheduleRuns = mysqlTable("schedule_runs", {
+  id: serial("id").primaryKey(),
+  scheduleId: varchar("scheduleId", { length: 36 })
+    .notNull()
+    .references(() => schedules.id),
+  userId: bigint("userId", { mode: "number", unsigned: true })
+    .notNull()
+    .references(() => users.id),
+  status: mysqlEnum("status", ["running", "done", "failed"]).notNull(),
+  /** finished deliverable, Markdown with embedded data-URL images */
+  content: longtext("content"),
+  error: text("error"),
+  readAt: timestamp("readAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+
+export type ScheduleRun = typeof scheduleRuns.$inferSelect;
+export type InsertScheduleRun = typeof scheduleRuns.$inferInsert;
