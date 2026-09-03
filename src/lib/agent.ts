@@ -211,3 +211,39 @@ export async function executeAgentTool(
 
   return { result: `Unknown tool "${call.function.name}" — continue without it.` }
 }
+
+// ── Council: premium second opinion ──────────────────────────────────────
+// After the orchestrator composes a deliverable, a DIFFERENT vendor's model
+// (Claude preferred, GPT otherwise) reviews and refines it — fact-checking
+// against the gathered evidence, tightening structure and prose. The user
+// still sees one seamless answer; cross-vendor review is exactly where
+// hybrid systems outscore any single model.
+
+export const COUNCIL_SYSTEM_PROMPT = `You are the final reviewer inside Sanjeev AI. Another AI system researched and drafted the deliverable below using web search, code execution and image generation. Produce the improved final version: verify factual and numeric claims against the evidence contained in the draft, fix weak reasoning, tighten the structure and prose, and remove redundancy. Rules: return ONLY the finished deliverable in polished Markdown; keep every image placeholder (![label](IMG_n)) intact in a sensible position; never mention the draft, the review, tools, or other AI systems; answer in the language of the original request.`
+
+/** Replace inline data-URL images with short placeholders before review. */
+export function stripImagesForReview(draft: string): { text: string; images: string[] } {
+  const images: string[] = []
+  const text = draft.replace(/!\[([^\]]*)\]\((data:[^)\s]+)\)/g, (_whole, alt: string, dataUrl: string) => {
+    images.push(dataUrl)
+    return `![${alt}](IMG_${images.length})`
+  })
+  return { text, images }
+}
+
+/** Swap image placeholders back to their data URLs after review. */
+export function restoreImagesAfterReview(text: string, images: string[]): string {
+  const restored = text.replace(/!\[([^\]]*)\]\(IMG_(\d+)\)/g, (whole, alt: string, n: string) => {
+    const url = images[Number(n) - 1]
+    return url ? `![${alt}](${url})` : whole
+  })
+  // Fallback: a bare token the reviewer dropped out of markdown syntax.
+  return restored.replace(/\bIMG_(\d+)\b/g, (whole, n: string) => {
+    const url = images[Number(n) - 1]
+    return url ? `\n\n![Image ${n}](${url})\n\n` : whole
+  })
+}
+
+export function councilUserMessage(request: string, draftText: string): string {
+  return `Original request:\n"""\n${request}\n"""\n\nDraft deliverable, with the evidence gathered:\n"""\n${draftText}\n"""`
+}

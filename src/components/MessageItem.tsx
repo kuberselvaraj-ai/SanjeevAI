@@ -464,6 +464,17 @@ export const MessageItem = memo(function MessageItem({
             )}
           </div>
         )}
+        {message.streaming && message.statusText && Boolean(message.content) && (
+          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            {message.statusText}
+          </div>
+        )}
+        {!message.streaming && message.refinedBy && !message.error && (
+          <div className="mt-1.5 text-[11px] text-muted-foreground/70">
+            Refined with {message.refinedBy}
+          </div>
+        )}
         {showActions && (
           <div className="mt-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
             <button

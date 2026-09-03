@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModel: DEFAULT_MODEL,
   webSearch: false,
   deepResearch: false,
+  council: true,
 }
 
 function read<T>(key: string, fallback: T): T {

@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { X, Eye, EyeOff, ExternalLink } from 'lucide-react'
+import { X, Eye, EyeOff, ExternalLink, Brain, Trash2 } from 'lucide-react'
 import type { Settings } from '@/lib/types'
 import { CHAT_MODELS } from '@/lib/models'
+import { loadMemories, saveMemories } from '@/lib/memory'
+import { Switch } from '@/components/ui/switch'
 
 function SecretField({
   label,
@@ -230,6 +232,27 @@ export function SettingsDialog({
               value={draft.temperature}
               onChange={(e) => set('temperature', parseFloat(e.target.value))}
               className="w-full accent-[hsl(var(--primary))]"
+            />
+          </div>
+
+          {/* Council — premium second opinion, works in desktop and hosted mode */}
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-border px-3 py-3">
+            <div>
+              <div className="text-[13px] font-medium">
+                Second-opinion refinement
+                <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                  Premium
+                </span>
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+                Claude or GPT reviews and improves big deliverables (reports, plans, analyses)
+                before you see them. Needs a premium model available — turn off for faster answers.
+              </p>
+            </div>
+            <Switch
+              checked={draft.council}
+              onCheckedChange={(v) => set('council', v)}
+              className="mt-0.5 shrink-0"
             />
           </div>
 

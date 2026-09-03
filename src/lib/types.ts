@@ -28,6 +28,8 @@ export interface ChatMessage {
   preparing?: boolean
   /** transient status shown while working, e.g. "Searching the web…" */
   statusText?: string
+  /** council pass: name of the premium model that refined this reply */
+  refinedBy?: string
   error?: string
 }
 
@@ -79,6 +81,8 @@ export interface Settings {
   webSearch: boolean
   /** deep research mode — forces web search + cited report structure */
   deepResearch: boolean
+  /** premium council: Claude/GPT reviews & refines deliverables before you see them */
+  council: boolean
 }
 
 export type VideoStatus = 'queued' | 'processing' | 'success' | 'failed'

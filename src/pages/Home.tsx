@@ -7,8 +7,12 @@ import { streamChat, type ApiMessage, type MessagePart, type ToolCall } from '@/
 import {
   AGENT_SYSTEM_HINT,
   AGENT_TOOLS,
+  COUNCIL_SYSTEM_PROMPT,
+  councilUserMessage,
   executeAgentTool,
   needsAgentTools,
+  restoreImagesAfterReview,
+  stripImagesForReview,
 } from '@/lib/agent'
 import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
@@ -293,14 +297,115 @@ export default function Home() {
       // $web_search is a Moonshot builtin — not available through OpenRouter.
       const useWebSearch = (settings.webSearch || settings.deepResearch) && !isPremiumModel(resolved)
 
+      // Mirror of the reply as it streams (tokens + embedded artifacts), so
+      // the council pass can review the full draft without re-reading state.
+      let contentMirror = ''
+
+      const finalize = () => {
+        updateConversation(convId, (c) => ({
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((m) =>
+            m.id === assistantId ? { ...m, streaming: false, statusText: undefined } : m,
+          ),
+        }))
+        setStreaming(false)
+        if (hosted) trpcUtils.usage.mine.invalidate()
+      }
+
+      // ── Council: a second vendor's model refines the deliverable ───────
+      // Premium-only: needs Claude or GPT available. The critic is always
+      // cross-vendor (the draft always comes from the Kimi orchestrator).
+      const councilModelId = premium.claude
+        ? 'anthropic/claude-fable-5'
+        : premium.gpt
+          ? 'openai/gpt-5.6-sol'
+          : null
+      const councilOn = agentRequested && settings.council && councilModelId !== null
+
+      const runCouncil = () => {
+        const criticLabel = councilModelId === 'anthropic/claude-fable-5' ? 'Claude Fable 5' : 'GPT-5.6 Sol'
+        const { text: draftText, images } = stripImagesForReview(contentMirror)
+        const councilMessages: ApiMessage[] = [
+          { role: 'system', content: COUNCIL_SYSTEM_PROMPT },
+          { role: 'user', content: councilUserMessage(lastUser?.content ?? '', draftText) },
+        ]
+        let refined = ''
+        const councilCb = {
+          onToken: (t: string) => {
+            refined += t
+            // Swap the draft for the refined version as it streams in.
+            const shown = restoreImagesAfterReview(refined, images)
+            updateConversation(convId, (c) => ({
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === assistantId ? { ...m, content: shown } : m,
+              ),
+            }))
+          },
+          onStatus: (s: string | null) =>
+            updateConversation(convId, (c) => ({
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === assistantId ? { ...m, statusText: s ?? undefined } : m,
+              ),
+            })),
+          onDone: () => {
+            updateConversation(convId, (c) => ({
+              ...c,
+              updatedAt: Date.now(),
+              messages: c.messages.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      streaming: false,
+                      statusText: undefined,
+                      refinedBy: criticLabel,
+                      content: restoreImagesAfterReview(refined, images),
+                    }
+                  : m,
+              ),
+            }))
+            setStreaming(false)
+            if (hosted) trpcUtils.usage.mine.invalidate()
+          },
+          onError: () => {
+            // Keep the draft — it is already a complete, valid answer.
+            updateConversation(convId, (c) => ({
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === assistantId ? { ...m, content: contentMirror } : m,
+              ),
+            }))
+            finalize()
+          },
+        }
+        councilCb.onStatus(`Refining with ${criticLabel}…`)
+        if (hosted) {
+          hostedStreamChat(
+            { model: councilModelId!, messages: councilMessages, temperature: settings.temperature, webSearch: false },
+            councilCb,
+            controller.signal,
+          )
+        } else if (councilModelId!.startsWith('anthropic/')) {
+          if (settings.anthropicKey) streamAnthropic(settings, councilMessages, councilCb, controller.signal)
+          else streamOpenRouter(settings, councilModelId!, councilMessages, councilCb, controller.signal)
+        } else {
+          if (settings.openaiKey) streamOpenAi(settings, councilMessages, councilCb, controller.signal)
+          else streamOpenRouter(settings, councilModelId!, councilMessages, councilCb, controller.signal)
+        }
+      }
+
       const callbacks = {
-        onToken: (t: string) =>
+        onToken: (t: string) => {
+          contentMirror += t
           updateConversation(convId, (c) => ({
             ...c,
             messages: c.messages.map((m) =>
               m.id === assistantId ? { ...m, content: m.content + t } : m,
             ),
-          })),
+          }))
+        },
         onReasoning: (t: string) =>
           updateConversation(convId, (c) => ({
             ...c,
@@ -316,15 +421,10 @@ export default function Home() {
             ),
           })),
         onDone: () => {
-          updateConversation(convId, (c) => ({
-            ...c,
-            updatedAt: Date.now(),
-            messages: c.messages.map((m) =>
-              m.id === assistantId ? { ...m, streaming: false } : m,
-            ),
-          }))
-          setStreaming(false)
-          if (hosted) trpcUtils.usage.mine.invalidate()
+          if (councilOn && !controller.signal.aborted && contentMirror.trim()) {
+            return runCouncil()
+          }
+          finalize()
         },
         onError: (err: string) => {
           updateConversation(convId, (c) => ({
@@ -350,15 +450,12 @@ export default function Home() {
                 onStatus: callbacks.onStatus,
               })
               if (artifact) {
+                const embed = `\n\n![${artifact.label}](${artifact.dataUrl})\n\n`
+                contentMirror += embed
                 updateConversation(convId, (c) => ({
                   ...c,
                   messages: c.messages.map((m) =>
-                    m.id === assistantId
-                      ? {
-                          ...m,
-                          content: `${m.content}\n\n![${artifact.label}](${artifact.dataUrl})\n\n`,
-                        }
-                      : m,
+                    m.id === assistantId ? { ...m, content: m.content + embed } : m,
                   ),
                 }))
               }
