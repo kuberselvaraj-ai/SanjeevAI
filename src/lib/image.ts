@@ -12,11 +12,18 @@ import type { Settings } from './types'
 
 export const IMAGE_MODELS = [
   {
+    id: 'fal-ai/nano-banana-2',
+    label: 'Nano Banana 2',
+    provider: 'Google via fal',
+    description: 'Arena #4 overall · best quality-per-dollar · ~$0.08/img',
+    badge: 'Best pick',
+  },
+  {
     id: 'fal-ai/flux-2-flex',
     label: 'FLUX.2',
     provider: 'fal.ai',
     description: 'Western photorealism · kills the “AI look” · ~$0.03/img',
-    badge: 'US default',
+    badge: 'Photoreal',
   },
   {
     id: 'fal-ai/nano-banana-pro',
@@ -277,7 +284,9 @@ async function generateFal(settings: Settings, opts: GenerateImageOpts): Promise
   const ratio = opts.aspectRatio || '1:1'
   let body: Record<string, unknown>
   if (opts.model.includes('nano-banana')) {
-    body = { prompt: opts.prompt, aspect_ratio: ratio, resolution: '2K', output_format: 'png' }
+    body = { prompt: opts.prompt, aspect_ratio: ratio, output_format: 'png' }
+    // Nano Banana Pro supports a resolution knob; Nano Banana 2 doesn't.
+    if (opts.model.includes('pro')) body.resolution = '2K'
   } else if (opts.model.includes('ideogram')) {
     body = { prompt: opts.prompt, aspect_ratio: ratio }
   } else {

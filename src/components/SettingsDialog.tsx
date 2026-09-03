@@ -160,12 +160,21 @@ export function SettingsDialog({
               />
 
               <SecretField
-                label="fal.ai key (FLUX.2, Nano Banana Pro, Ideogram 4)"
+                label="fal.ai key (FLUX.2, Nano Banana Pro, Ideogram 4, Kling/Veo video)"
                 value={draft.falKey}
                 onChange={(v) => set('falKey', v)}
                 placeholder="fal key"
                 helpUrl="https://fal.ai/dashboard/keys"
                 helpText="fal.ai → Dashboard → Keys (pay-per-use, Stripe card)"
+              />
+
+              <SecretField
+                label="ElevenLabs key (premium voices — mic & read aloud)"
+                value={draft.elevenlabsKey}
+                onChange={(v) => set('elevenlabsKey', v)}
+                placeholder="sk_..."
+                helpUrl="https://elevenlabs.io/"
+                helpText="elevenlabs.io → Profile → API key (free tier works)"
               />
             </>
           )}

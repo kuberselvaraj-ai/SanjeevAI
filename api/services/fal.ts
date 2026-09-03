@@ -37,9 +37,10 @@ function requestBody(
     const body: Record<string, unknown> = {
       prompt: opts.prompt,
       aspect_ratio: ratio,
-      resolution: "2K",
       output_format: "png",
     };
+    // Nano Banana Pro supports a resolution knob; Nano Banana 2 doesn't.
+    if (model.includes("pro")) body.resolution = "2K";
     if (opts.referenceImage) body.image_urls = [opts.referenceImage];
     return body;
   }

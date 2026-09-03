@@ -3,15 +3,53 @@ import type { Settings } from './types'
 /**
  * Voice mode: mic → text and read-aloud.
  * Hosted mode goes through the server. Desktop mode calls the provider
- * directly: OpenAI (Whisper + tts-1) if openaiKey is set, otherwise
- * Alibaba Bailian (qwen3-asr-flash + qwen3-tts-flash) via dashscopeKey.
+ * directly: ElevenLabs (best, elevenlabsKey) → OpenAI (openaiKey) →
+ * Alibaba Bailian (dashscopeKey).
  */
 
 const DASHSCOPE_MM =
   'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'
 
 export function voiceAvailable(settings: Settings, hosted: boolean): boolean {
-  return hosted || Boolean(settings.openaiKey || settings.dashscopeKey)
+  return hosted || Boolean(settings.elevenlabsKey || settings.openaiKey || settings.dashscopeKey)
+}
+
+/** Desktop ASR via ElevenLabs Scribe v2. */
+async function transcribeElevenlabs(settings: Settings, blob: Blob): Promise<string> {
+  const form = new FormData()
+  form.append('model_id', 'scribe_v2')
+  form.append('file', blob, `audio.${blob.type.includes('ogg') ? 'ogg' : 'webm'}`)
+  const res = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+    method: 'POST',
+    headers: { 'xi-api-key': settings.elevenlabsKey },
+    body: form,
+  })
+  const data = (await res.json().catch(() => ({}))) as {
+    text?: string
+    detail?: { message?: string } | string
+  }
+  if (!res.ok || data.text === undefined) {
+    const detail = typeof data.detail === 'string' ? data.detail : data.detail?.message
+    throw new Error(detail || `ElevenLabs API error ${res.status}`)
+  }
+  return data.text
+}
+
+/** Desktop TTS via ElevenLabs Flash v2.5 (Rachel). Returns an audio blob. */
+async function speakElevenlabs(settings: Settings, text: string): Promise<Blob> {
+  const res = await fetch('https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'xi-api-key': settings.elevenlabsKey },
+    body: JSON.stringify({ text, model_id: 'eleven_flash_v2_5' }),
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as {
+      detail?: { message?: string } | string
+    }
+    const detail = typeof data.detail === 'string' ? data.detail : data.detail?.message
+    throw new Error(detail || `ElevenLabs API error ${res.status}`)
+  }
+  return res.blob()
 }
 
 async function blobToB64(blob: Blob): Promise<string> {
@@ -68,6 +106,8 @@ export async function transcribeAudio(
       credentials: 'include',
       body: form,
     })
+  } else if (settings.elevenlabsKey) {
+    return transcribeElevenlabs(settings, blob)
   } else if (settings.openaiKey) {
     form.append('model', 'whisper-1')
     res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -147,6 +187,8 @@ export async function speakText(
       throw new Error(msg || `TTS failed (${res.status})`)
     }
     audioBlob = await res.blob()
+  } else if (settings.elevenlabsKey) {
+    audioBlob = await speakElevenlabs(settings, cleaned)
   } else if (settings.openaiKey) {
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',

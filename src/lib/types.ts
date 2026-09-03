@@ -60,8 +60,10 @@ export interface Settings {
   dashscopeKey: string
   /** Volcano Engine Ark key — Seedream images (desktop mode) */
   arkKey: string
-  /** fal.ai key — FLUX.2, Nano Banana Pro, Ideogram 4 (desktop mode) */
+  /** fal.ai key — FLUX.2, Nano Banana Pro, Ideogram 4, Kling/Veo video (desktop mode) */
   falKey: string
+  /** ElevenLabs key — premium voices (desktop mode) */
+  elevenlabsKey: string
   /** defaults to https://api.moonshot.ai/v1 */
   moonshotBaseUrl: string
   /** defaults to https://api.minimax.io/v1 */

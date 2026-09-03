@@ -13,8 +13,20 @@ export const VIDEO_MODELS = [
   {
     id: 'MiniMax-H3',
     label: 'Hailuo 3 (H3)',
-    description: 'Native sound & dialogue · up to 2K · 4–15s',
-    badge: 'Audio',
+    description: 'Arena #2 · native sound & dialogue · up to 2K · 4–15s',
+    badge: 'Best value',
+  },
+  {
+    id: 'fal-ai/kling-video/v3/pro/text-to-video',
+    label: 'Kling 3.0 Pro',
+    description: 'Top accessible arena model · 15s multi-shot · lip-sync · via fal',
+    badge: 'Top tier',
+  },
+  {
+    id: 'fal-ai/veo3.1/fast',
+    label: 'Veo 3.1 Fast',
+    description: 'Google · top Western model · synced audio · via fal',
+    badge: 'Premium',
   },
   { id: 'MiniMax-Hailuo-2.3', label: 'Hailuo 2.3', description: 'Silent · 6/10s · up to 1080P' },
   { id: 'MiniMax-Hailuo-02', label: 'Hailuo 02', description: 'Silent · previous generation' },
@@ -24,10 +36,16 @@ export const H3_DURATIONS = [4, 5, 6, 8, 10, 12, 15] as const
 export const H3_RESOLUTIONS = ['768P', '2K'] as const
 export const H3_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] as const
 
+export const KLING_DURATIONS = [5, 10, 15] as const
+export const VEO_DURATIONS = [4, 6, 8] as const
+export const FAL_VIDEO_RATIOS = ['16:9', '9:16', '1:1'] as const
+
 export const VIDEO_DURATIONS = [6, 10] as const
 export const VIDEO_RESOLUTIONS = ['768P', '1080P'] as const
 
 export const isH3 = (model: string) => model === 'MiniMax-H3'
+export const isFalVideo = (model: string) => model.startsWith('fal-ai/')
+export const isKling = (model: string) => model.includes('kling-video')
 
 interface CreateTaskResponse {
   task_id?: string
@@ -76,6 +94,80 @@ function v2(settings: Settings) {
   return `${root(settings)}/v2`
 }
 
+function falHeaders(settings: Settings) {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Key ${settings.falKey}`,
+  }
+}
+
+async function createFalVideoTask(
+  settings: Settings,
+  opts: { prompt: string; model: string; duration: number; resolution: string; ratio?: string },
+): Promise<string> {
+  if (!settings.falKey) {
+    throw new Error('Add a fal.ai API key in Settings to use Kling 3.0 or Veo 3.1.')
+  }
+  const body: Record<string, unknown> = isKling(opts.model)
+    ? {
+        prompt: opts.prompt,
+        duration: String(Math.min(15, Math.max(3, Math.round(opts.duration)))),
+        aspect_ratio: opts.ratio || '16:9',
+        generate_audio: true,
+      }
+    : {
+        prompt: opts.prompt,
+        aspect_ratio: opts.ratio === '9:16' ? '9:16' : '16:9',
+        duration: opts.duration >= 8 ? '8s' : opts.duration >= 6 ? '6s' : '4s',
+        resolution: opts.resolution === '1080P' ? '1080p' : '720p',
+        generate_audio: true,
+      }
+  const res = await fetch(`https://queue.fal.run/${opts.model}`, {
+    method: 'POST',
+    headers: falHeaders(settings),
+    body: JSON.stringify(body),
+  })
+  const data = (await res.json().catch(() => ({}))) as {
+    request_id?: string
+    detail?: string | { msg?: string }[]
+    message?: string
+  }
+  if (!res.ok || !data.request_id) {
+    const detail = Array.isArray(data.detail) ? data.detail.map((d) => d.msg).join('; ') : data.detail
+    throw new Error(detail || data.message || `fal.ai API error ${res.status}`)
+  }
+  return data.request_id
+}
+
+async function pollFalVideoTask(
+  settings: Settings,
+  requestId: string,
+  model: string,
+): Promise<PollResult> {
+  const statusRes = await fetch(
+    `https://queue.fal.run/${model}/requests/${encodeURIComponent(requestId)}/status`,
+    { headers: falHeaders(settings) },
+  )
+  const status = (await statusRes.json().catch(() => ({}))) as { status?: string; detail?: string }
+  if (!statusRes.ok) {
+    return { state: 'failed', error: status.detail || `fal.ai status error ${statusRes.status}` }
+  }
+  if (status.status !== 'COMPLETED') return { state: 'pending' }
+  const res = await fetch(
+    `https://queue.fal.run/${model}/requests/${encodeURIComponent(requestId)}`,
+    { headers: falHeaders(settings) },
+  )
+  const data = (await res.json().catch(() => ({}))) as {
+    video?: { url?: string }
+    detail?: string
+  }
+  const url = data.video?.url
+  if (!res.ok || !url) {
+    return { state: 'failed', error: data.detail || `fal.ai result error ${res.status}` }
+  }
+  return { state: 'success', videoUrl: url }
+}
+
 export async function createVideoTask(
   settings: Settings,
   opts: {
@@ -87,6 +179,7 @@ export async function createVideoTask(
     firstFrameImage?: string
   },
 ): Promise<string> {
+  if (isFalVideo(opts.model)) return createFalVideoTask(settings, opts)
   if (isH3(opts.model)) {
     type ContentItem =
       | { type: 'text'; text: string }
@@ -147,6 +240,7 @@ export async function pollVideoTask(
   taskId: string,
   model: string,
 ): Promise<PollResult> {
+  if (isFalVideo(model)) return pollFalVideoTask(settings, taskId, model)
   if (isH3(model)) {
     const res = await fetch(`${v2(settings)}/query/video_generation/${encodeURIComponent(taskId)}`, {
       headers: headers(settings),

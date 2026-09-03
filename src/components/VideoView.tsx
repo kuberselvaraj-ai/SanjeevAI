@@ -9,7 +9,12 @@ import {
   H3_DURATIONS,
   H3_RESOLUTIONS,
   H3_RATIOS,
+  KLING_DURATIONS,
+  VEO_DURATIONS,
+  FAL_VIDEO_RATIOS,
   isH3,
+  isFalVideo,
+  isKling,
   createVideoTask,
 } from '@/lib/video'
 import { uid } from '@/lib/storage'
@@ -41,8 +46,22 @@ export function VideoView({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const noKey = !hosted && !settings.minimaxKey
+  const noKey = !hosted && (isFalVideo(model) ? !settings.falKey : !settings.minimaxKey)
   const h3 = isH3(model)
+  const falVideo = isFalVideo(model)
+  const kling = isKling(model)
+  const durations: readonly number[] = h3
+    ? H3_DURATIONS
+    : falVideo
+      ? kling
+        ? KLING_DURATIONS
+        : VEO_DURATIONS
+      : VIDEO_DURATIONS
+  const resolutions: readonly string[] = h3
+    ? H3_RESOLUTIONS
+    : falVideo
+      ? ['720p', '1080p']
+      : VIDEO_RESOLUTIONS
   const createMutation = trpc.video.create.useMutation()
   const trpcUtils = trpc.useUtils()
 
@@ -51,6 +70,11 @@ export function VideoView({
     if (isH3(m)) {
       if (!(H3_DURATIONS as readonly number[]).includes(duration)) setDuration(6)
       if (!(H3_RESOLUTIONS as readonly string[]).includes(resolution)) setResolution('768P')
+    } else if (isFalVideo(m)) {
+      const ds: readonly number[] = isKling(m) ? KLING_DURATIONS : VEO_DURATIONS
+      if (!ds.includes(duration)) setDuration(ds[0])
+      setResolution('1080p')
+      if (!(FAL_VIDEO_RATIOS as readonly string[]).includes(ratio)) setRatio('16:9')
     } else {
       if (!(VIDEO_DURATIONS as readonly number[]).includes(duration)) setDuration(6)
       if (!(VIDEO_RESOLUTIONS as readonly string[]).includes(resolution)) setResolution('768P')
@@ -103,7 +127,7 @@ export function VideoView({
           <Clapperboard size={17} />
         </button>
         <h2 className="flex-1 text-sm font-medium text-muted-foreground">
-          Video generation · MiniMax Hailuo
+          Video generation · Hailuo 3, Kling 3.0 & Veo 3.1
         </h2>
       </header>
 
@@ -121,7 +145,8 @@ export function VideoView({
             <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
               <AlertCircle size={16} className="mt-0.5 shrink-0 text-primary" />
               <span>
-                Add your MiniMax API key to enable video generation.{' '}
+                Add your {isFalVideo(model) ? 'fal.ai' : 'MiniMax'} API key to use{' '}
+                {VIDEO_MODELS.find((m) => m.id === model)?.label}.{' '}
                 <button onClick={onOpenSettings} className="font-medium text-primary underline underline-offset-2">
                   Open Settings
                 </button>
@@ -135,7 +160,7 @@ export function VideoView({
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
               placeholder={
-                h3
+                h3 || falVideo
                   ? 'Describe the video AND its sound… e.g. A barista slides a coffee across the counter and says "One flat white!" — cafe ambience, cup clinks, soft jazz.'
                   : 'Describe the video… e.g. A golden retriever running through tall grass at sunset, slow cinematic tracking shot.'
               }
@@ -166,7 +191,7 @@ export function VideoView({
                 onChange={(e) => setDuration(Number(e.target.value))}
                 className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
               >
-                {(h3 ? H3_DURATIONS : VIDEO_DURATIONS).map((d) => (
+                {durations.map((d) => (
                   <option key={d} value={d}>
                     {d}s
                   </option>
@@ -177,21 +202,21 @@ export function VideoView({
                 onChange={(e) => setResolution(e.target.value)}
                 className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
               >
-                {(h3 ? H3_RESOLUTIONS : VIDEO_RESOLUTIONS).map((r) => (
-                  <option key={r} value={r} disabled={r === '1080P' && duration === 10}>
+                {resolutions.map((r) => (
+                  <option key={r} value={r} disabled={r === '1080P' && duration === 10 && !falVideo}>
                     {r}
-                    {r === '1080P' && duration === 10 ? ' (6s only)' : ''}
+                    {r === '1080P' && duration === 10 && !falVideo ? ' (6s only)' : ''}
                   </option>
                 ))}
               </select>
-              {h3 && !imageUrl.trim() && (
+              {(h3 || falVideo) && !imageUrl.trim() && (
                 <select
                   value={ratio}
                   onChange={(e) => setRatio(e.target.value)}
                   className="rounded-lg border border-input bg-background px-2.5 py-2 text-[13px] outline-none"
                   title="Aspect ratio"
                 >
-                  {H3_RATIOS.map((r) => (
+                  {(falVideo ? FAL_VIDEO_RATIOS : H3_RATIOS).map((r) => (
                     <option key={r} value={r}>
                       {r}
                     </option>
@@ -211,7 +236,11 @@ export function VideoView({
             <p className="mt-2.5 text-[11px] leading-5 text-muted-foreground/80">
               {h3
                 ? 'Hailuo 3 generates synchronized stereo sound — dialogue (11 languages, lip-synced), sound effects and ambience. Describe the audio in your prompt. Billed per second (~$0.08/s at 768P, ~$0.13/s at 2K).'
-                : 'Hailuo 2.3 / 02 generate silent video. Switch to Hailuo 3 (H3) for native sound.'}
+                : kling
+                  ? 'Kling 3.0 Pro — top of the accessible arena. 15s multi-shot clips, native audio with multilingual lip-sync. ~$0.17/s with audio via fal.ai.'
+                  : falVideo
+                    ? 'Veo 3.1 Fast — Google’s flagship. Synced audio, true-to-life physics. ~$0.15/s with audio via fal.ai. Outputs carry an invisible SynthID watermark.'
+                    : 'Hailuo 2.3 / 02 generate silent video. Switch to Hailuo 3 (H3) for native sound.'}
             </p>
             {error && (
               <p className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">

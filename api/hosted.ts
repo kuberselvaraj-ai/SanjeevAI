@@ -5,6 +5,7 @@ import { authenticateRequest } from "./kimi/auth";
 import { getMonthUsage, recordUsage } from "./queries/usage";
 import { extractFileText, moonshotKey, openChatStream } from "./services/moonshot";
 import { dashscopeConfigured, qwenSpeak, qwenTranscribe } from "./services/dashscope";
+import { elevenlabsConfigured, elevenSpeak, elevenTranscribe } from "./services/elevenlabs";
 
 /**
  * Hosted-mode API: the browser talks to these endpoints, the server calls
@@ -187,11 +188,12 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     } catch {
       return c.json({ error: "Please sign in to use Sanjeev AI." }, 401);
     }
-    const useOpenAi = Boolean(process.env.OPENAI_API_KEY);
-    const useDashscope = !useOpenAi && dashscopeConfigured();
-    if (!useOpenAi && !useDashscope) {
+    const useEleven = elevenlabsConfigured();
+    const useOpenAi = !useEleven && Boolean(process.env.OPENAI_API_KEY);
+    const useDashscope = !useEleven && !useOpenAi && dashscopeConfigured();
+    if (!useEleven && !useOpenAi && !useDashscope) {
       return c.json(
-        { error: "Voice input is not configured yet (no OpenAI or Alibaba Bailian key on the server)." },
+        { error: "Voice input is not configured yet (no ElevenLabs, OpenAI or Alibaba Bailian key on the server)." },
         503,
       );
     }
@@ -205,7 +207,14 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     }
     let text: string;
     let asrModel: string;
-    if (useOpenAi) {
+    if (useEleven) {
+      try {
+        text = await elevenTranscribe(file);
+      } catch (e) {
+        return c.json({ error: (e as Error).message }, 502);
+      }
+      asrModel = "scribe_v2";
+    } else if (useOpenAi) {
       const out = new FormData();
       out.append("model", "whisper-1");
       out.append("file", file, file.name || "audio.webm");
@@ -255,11 +264,12 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     } catch {
       return c.json({ error: "Please sign in to use Sanjeev AI." }, 401);
     }
-    const useOpenAi = Boolean(process.env.OPENAI_API_KEY);
-    const useDashscope = !useOpenAi && dashscopeConfigured();
-    if (!useOpenAi && !useDashscope) {
+    const useEleven = elevenlabsConfigured();
+    const useOpenAi = !useEleven && Boolean(process.env.OPENAI_API_KEY);
+    const useDashscope = !useEleven && !useOpenAi && dashscopeConfigured();
+    if (!useEleven && !useOpenAi && !useDashscope) {
       return c.json(
-        { error: "Read aloud is not configured yet (no OpenAI or Alibaba Bailian key on the server)." },
+        { error: "Read aloud is not configured yet (no ElevenLabs, OpenAI or Alibaba Bailian key on the server)." },
         503,
       );
     }
@@ -269,7 +279,14 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
 
     let audioBody: BodyInit;
     let ttsModel: string;
-    if (useOpenAi) {
+    if (useEleven) {
+      try {
+        audioBody = await elevenSpeak(text);
+      } catch (e) {
+        return c.json({ error: (e as Error).message }, 502);
+      }
+      ttsModel = "eleven_flash_v2_5";
+    } else if (useOpenAi) {
       const res = await fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: {

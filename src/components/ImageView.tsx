@@ -148,7 +148,7 @@ export function ImageView({
           <ImageIcon size={17} />
         </button>
         <h2 className="flex-1 text-sm font-medium text-muted-foreground">
-          Image studio · FLUX.2, Nano Banana Pro, Ideogram 4, Seedream & more
+          Image studio · Nano Banana 2, FLUX.2, Ideogram 4, Seedream & more
         </h2>
       </header>
 
