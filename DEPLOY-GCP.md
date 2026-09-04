@@ -18,12 +18,14 @@ CREATE USER 'sanjeevai'@'%' IDENTIFIED BY '<strong-password>';
 GRANT ALL PRIVILEGES ON sanjeevai.* TO 'sanjeevai'@'%';
 ```
 
-Connection string for Cloud SQL's public IP (enable one, or use the private IP
-with a Serverless VPC connector if the instance is private-only):
+Connection string — Cloud Run reaches Cloud SQL through the built-in Cloud SQL
+connector (unix socket, no public IP or authorized-network changes needed):
 
 ```
-DATABASE_URL=mysql://sanjeevai:<password>@<CLOUD_SQL_IP>:3306/sanjeevai
+DATABASE_URL=mysql://sanjeevai:<password>@localhost/sanjeevai?socketPath=/cloudsql/<PROJECT>:<REGION>:<INSTANCE>
 ```
+
+(Remember to URL-encode the password: `@` → `%40`.)
 
 Create the schema — from your laptop, in this repo:
 
@@ -51,6 +53,7 @@ gcloud run deploy sanjeevai \
   --allow-unauthenticated \
   --min-instances 1 \
   --memory 1Gi --cpu 1 \
+  --add-cloudsql-instances <PROJECT>:<REGION>:<INSTANCE> \
   --set-env-vars "NODE_ENV=production" \
   --set-env-vars "DATABASE_URL=<from step 1>" \
   --set-env-vars "APP_ID=<from local .env>" \
