@@ -1,5 +1,8 @@
 # Deploying Sanjeev AI to sanjeevai.com (Railway)
 
+> Using Google Cloud instead? See **DEPLOY-GCP.md** (Cloud Run + Cloud SQL —
+> recommended if you already run XYeed on GCP).
+
 Stack: Node 20 + Hono API + React SPA, MySQL-compatible database, Dockerfile included.
 Time: ~30 minutes. Cost: Railway ~$5–20/mo + TiDB Cloud Serverless free tier.
 
