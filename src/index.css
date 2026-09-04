@@ -162,6 +162,16 @@
   animation: ring-spin 0.9s linear infinite;
 }
 
+/* Anchored comment highlight — telemetry-cyan marker on quoted passages */
+mark.anchor-mark {
+  background: hsl(188 86% 53% / 0.13);
+  color: inherit;
+  border-bottom: 1px dashed hsl(188 86% 53% / 0.55);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
 /* Boot splash */
 @keyframes boot-line-in {
   from {

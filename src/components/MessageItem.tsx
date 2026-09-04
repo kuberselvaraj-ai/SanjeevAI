@@ -1,4 +1,5 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -21,6 +22,8 @@ import {
   Volume2,
   Terminal,
   Loader2,
+  MessageSquarePlus,
+  MessagesSquare,
 } from 'lucide-react'
 import type { CodeRunResult } from '@/lib/code'
 import type { Attachment, ChatMessage } from '@/lib/types'
@@ -64,6 +67,99 @@ function AttachmentChip({ attachment }: { attachment: Attachment }) {
 
 /** Languages that can be rendered live in the artifacts panel. */
 const PREVIEWABLE = new Set(['html', 'svg'])
+
+/**
+ * Floating "Comment" button that appears when the user selects text
+ * inside a message. Rendered in a portal so it can float above anything.
+ */
+function SelectionCommentor({
+  containerRef,
+  onComment,
+}: {
+  containerRef: React.RefObject<HTMLElement | null>
+  onComment: (quote: string) => void
+}) {
+  const [pop, setPop] = useState<{ quote: string; x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    const onUp = () => {
+      const sel = window.getSelection()
+      const el = containerRef.current
+      if (!sel || sel.isCollapsed || !el) return
+      const quote = sel.toString().replace(/\s+/g, ' ').trim()
+      if (
+        quote.length < 2 ||
+        !el.contains(sel.anchorNode) ||
+        !el.contains(sel.focusNode)
+      ) {
+        return
+      }
+      const r = sel.getRangeAt(0).getBoundingClientRect()
+      setPop({ quote: quote.slice(0, 400), x: r.left + r.width / 2, y: r.top })
+    }
+    const hide = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.anchor-pop')) setPop(null)
+    }
+    document.addEventListener('mouseup', onUp)
+    document.addEventListener('mousedown', hide)
+    return () => {
+      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('mousedown', hide)
+    }
+  }, [containerRef])
+
+  if (!pop) return null
+  return createPortal(
+    <button
+      className="anchor-pop fixed z-50 flex items-center gap-1.5 rounded-full border border-primary/40 bg-popover px-3 py-1.5 text-xs font-medium text-primary shadow-lg shadow-black/30 transition-transform hover:scale-105"
+      style={{ left: pop.x, top: Math.max(8, pop.y - 42), transform: 'translateX(-50%)' }}
+      onClick={() => {
+        onComment(pop.quote)
+        window.getSelection()?.removeAllRanges()
+        setPop(null)
+      }}
+    >
+      <MessageSquarePlus size={13} />
+      Comment
+    </button>,
+    document.body,
+  )
+}
+
+/**
+ * Wraps occurrences of the anchored quotes in <mark class="anchor-mark">
+ * inside the rendered message. Only exact single-text-node matches are
+ * highlighted; anything else is left as-is (the panel still shows the quote).
+ */
+function highlightQuotes(el: HTMLElement, quotes: string[]) {
+  el.querySelectorAll('mark.anchor-mark').forEach((m) => {
+    m.replaceWith(document.createTextNode(m.textContent ?? ''))
+  })
+  el.normalize()
+  if (!quotes.length) return
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  while (walker.nextNode()) {
+    const t = walker.currentNode as Text
+    if (t.parentElement?.closest('code, pre')) continue
+    nodes.push(t)
+  }
+  for (const q of quotes) {
+    const needle = q.slice(0, 160)
+    for (const t of nodes) {
+      if (!t.isConnected) continue
+      const i = t.data.indexOf(needle)
+      if (i === -1) continue
+      const mid = t.splitText(i)
+      mid.splitText(needle.length)
+      const mark = document.createElement('mark')
+      mark.className = 'anchor-mark'
+      mark.textContent = mid.data
+      mid.replaceWith(mark)
+      break
+    }
+  }
+}
 
 function CodeBlock({
   language,
@@ -312,26 +408,45 @@ export const MessageItem = memo(function MessageItem({
   message,
   dark,
   isLast = false,
+  quotes,
+  commentCount = 0,
   onRegenerate,
   onEdit,
   onSpeak,
   onPreview,
   onRunCode,
+  onStartComment,
+  onShowComments,
 }: {
   message: ChatMessage
   dark: boolean
   /** true for the most recent assistant message — enables Regenerate */
   isLast?: boolean
+  /** quotes anchored to this message — highlighted inline when found */
+  quotes?: string[]
+  /** open comment threads anchored to this message */
+  commentCount?: number
   onRegenerate?: () => void
   onEdit?: (id: string, text: string) => void
   onSpeak?: (text: string) => void
   onPreview?: (code: string, language: string) => void
   onRunCode?: (code: string) => Promise<CodeRunResult>
+  onStartComment?: (messageId: string, quote: string) => void
+  onShowComments?: () => void
 }) {
   const { copied, copy } = useCopy(message.content)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [remembered, setRemembered] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Inline highlight for anchored quotes (re-applied after each render that
+  // changes content; skipped while streaming since the DOM is in flux).
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el || message.streaming) return
+    highlightQuotes(el, quotes ?? [])
+  }, [message.content, quotes, message.streaming])
   const remember = () => {
     // Save a compact snippet — full answers belong in the chat, facts in memory.
     addMemory(message.content.replace(/\s+/g, ' ').slice(0, 300))
@@ -343,6 +458,12 @@ export const MessageItem = memo(function MessageItem({
     return (
       <div className="rise-in group flex justify-end px-4 py-2 md:px-8">
         <div className="max-w-[85%] md:max-w-[75%]">
+          {onStartComment && (
+            <SelectionCommentor
+              containerRef={contentRef}
+              onComment={(q) => onStartComment(message.id, q)}
+            />
+          )}
           {message.attachments && message.attachments.length > 0 && (
             <div className="mb-1.5 flex flex-wrap justify-end gap-2">
               {message.attachments.map((a) => (
@@ -383,10 +504,22 @@ export const MessageItem = memo(function MessageItem({
             </div>
           ) : (
             message.content && (
-              <div className="rounded-2xl rounded-br-md bg-accent px-4 py-2.5">
+              <div ref={contentRef} className="rounded-2xl rounded-br-md bg-accent px-4 py-2.5">
                 <p className="whitespace-pre-wrap leading-7">{message.content}</p>
               </div>
             )
+          )}
+          {commentCount > 0 && onShowComments && (
+            <div className="mt-1 flex justify-end">
+              <button
+                onClick={onShowComments}
+                className="flex items-center gap-1 rounded-full border border-[hsl(188_86%_53%/0.4)] bg-[hsl(188_86%_53%/0.08)] px-2 py-0.5 text-[10.5px] font-medium text-[hsl(188_86%_63%)] hover:bg-[hsl(188_86%_53%/0.16)]"
+                title="Open comment threads on this message"
+              >
+                <MessagesSquare size={11} />
+                {commentCount}
+              </button>
+            </div>
           )}
           {!editing && (
             <div className="mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -421,6 +554,12 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div className="rise-in group px-4 py-2 md:px-8">
       <div className="mx-auto w-full max-w-3xl">
+        {onStartComment && (
+          <SelectionCommentor
+            containerRef={contentRef}
+            onComment={(q) => onStartComment(message.id, q)}
+          />
+        )}
         <div className="mb-1.5 flex items-center gap-2">
           <span className="font-display flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
             S
@@ -447,7 +586,7 @@ export const MessageItem = memo(function MessageItem({
         ) : (
           <div className={message.streaming && !message.content ? 'stream-cursor' : ''}>
             {message.content ? (
-              <div className={message.streaming ? 'stream-cursor' : ''}>
+              <div ref={contentRef} className={message.streaming ? 'stream-cursor' : ''}>
                 <Markdown
                   text={message.content}
                   dark={dark}
@@ -475,6 +614,18 @@ export const MessageItem = memo(function MessageItem({
           <div className="mt-1.5 flex items-center gap-1.5 font-telemetry text-[9.5px] text-muted-foreground/80">
             <span className="led" style={{ color: '#22d3ee' }} />
             Council review · {message.refinedBy}
+          </div>
+        )}
+        {commentCount > 0 && onShowComments && (
+          <div className="mt-1.5">
+            <button
+              onClick={onShowComments}
+              className="flex items-center gap-1 rounded-full border border-[hsl(188_86%_53%/0.4)] bg-[hsl(188_86%_53%/0.08)] px-2 py-0.5 text-[10.5px] font-medium text-[hsl(188_86%_63%)] hover:bg-[hsl(188_86%_53%/0.16)]"
+              title="Open comment threads on this message"
+            >
+              <MessagesSquare size={11} />
+              {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+            </button>
           </div>
         )}
         {showActions && (

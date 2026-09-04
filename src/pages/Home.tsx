@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { KeyRound } from 'lucide-react'
-import type { Attachment, ChatMessage, Conversation, ImageJob, Settings, VideoJob } from '@/lib/types'
+import type { AnchorComment, Attachment, ChatMessage, Conversation, ImageJob, Settings, VideoJob } from '@/lib/types'
 import { store, uid } from '@/lib/storage'
 import { streamChat, type ApiMessage, type MessagePart, type ToolCall } from '@/lib/kimi'
 import {
@@ -81,6 +81,7 @@ export default function Home() {
   const [streaming, setStreaming] = useState(false)
   const [videos, setVideos] = useState<VideoJob[]>(() => store.loadVideos())
   const [images, setImages] = useState<ImageJob[]>(() => store.loadImages())
+  const [comments, setComments] = useState<AnchorComment[]>(() => store.loadComments())
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -110,6 +111,11 @@ export default function Home() {
   )
   useEffect(() => store.saveVideos(videos), [videos])
   useEffect(() => store.saveImages(images), [images])
+  // Comments of temporary chats are never persisted (same rule as the chats).
+  useEffect(() => {
+    const tempIds = new Set(conversations.filter((c) => c.temp).map((c) => c.id))
+    store.saveComments(comments.filter((c) => !tempIds.has(c.conversationId)))
+  }, [comments, conversations])
 
   // ----- theme -----
   useEffect(() => {
@@ -181,9 +187,46 @@ export default function Home() {
         if (activeId === id) setActiveId(next[0]?.id ?? null)
         return next
       })
+      setComments((prev) => prev.filter((c) => c.conversationId !== id))
     },
     [activeId],
   )
+
+  // ----- anchored comments (Comms log) -----
+  const addComment = useCallback(
+    (messageId: string, quote: string, text: string) => {
+      if (!activeId) return
+      setComments((prev) => [
+        ...prev,
+        {
+          id: uid(),
+          conversationId: activeId,
+          messageId,
+          quote,
+          entries: [{ id: uid(), text, createdAt: Date.now() }],
+          createdAt: Date.now(),
+        },
+      ])
+    },
+    [activeId],
+  )
+  const replyComment = useCallback((id: string, text: string) => {
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? { ...c, entries: [...c.entries, { id: uid(), text, createdAt: Date.now() }] }
+          : c,
+      ),
+    )
+  }, [])
+  const resolveComment = useCallback((id: string) => {
+    setComments((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, resolved: !c.resolved } : c)),
+    )
+  }, [])
+  const deleteComment = useCallback((id: string) => {
+    setComments((prev) => prev.filter((c) => c.id !== id))
+  }, [])
 
   const renameChat = useCallback(
     (id: string, title: string) => updateConversation(id, (c) => ({ ...c, title })),
@@ -698,6 +741,17 @@ export default function Home() {
     ],
   )
 
+  // "Ask in chat" — the anchored quote + comment becomes a follow-up message,
+  // so the side-thread and the model stay in the same context.
+  const askInChat = useCallback(
+    (c: AnchorComment) => {
+      const q = c.quote.length > 220 ? `${c.quote.slice(0, 220)}…` : c.quote
+      const note = c.entries[0]?.text ?? ''
+      send(`Regarding “${q}”${note ? ` — ${note}` : ''}`)
+    },
+    [send],
+  )
+
   /** Regenerate the last assistant reply (same prompt, fresh response). */
   const regenerate = useCallback(() => {
     const conv = conversations.find((c) => c.id === activeId)
@@ -956,6 +1010,12 @@ export default function Home() {
               onShare={hosted ? shareChat : undefined}
               onToggleTemp={toggleTemp}
               onStyleChange={setStyle}
+              comments={comments.filter((c) => c.conversationId === active?.id)}
+              onAddComment={addComment}
+              onReplyComment={replyComment}
+              onResolveComment={resolveComment}
+              onDeleteComment={deleteComment}
+              onAskInChat={askInChat}
               headerExtra={
                 noKey ? (
                   <button

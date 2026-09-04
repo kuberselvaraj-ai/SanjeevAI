@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Menu,
   Sparkles,
@@ -12,11 +12,13 @@ import {
   Wand2,
   Share2,
   Check,
+  MessagesSquare,
 } from 'lucide-react'
-import type { Conversation } from '@/lib/types'
+import type { AnchorComment, Conversation } from '@/lib/types'
 import type { CodeRunResult } from '@/lib/code'
 import { STYLE_PRESETS } from '@/lib/styles'
 import { MessageItem } from './MessageItem'
+import { CommentsPanel, type DraftAnchor } from './CommentsPanel'
 
 const SUGGESTIONS = [
   {
@@ -57,6 +59,12 @@ export function ChatView({
   onShare,
   onToggleTemp,
   onStyleChange,
+  comments = [],
+  onAddComment,
+  onReplyComment,
+  onResolveComment,
+  onDeleteComment,
+  onAskInChat,
 }: {
   conversation: Conversation | null
   dark: boolean
@@ -74,12 +82,43 @@ export function ChatView({
   onShare?: () => Promise<void>
   onToggleTemp: () => void
   onStyleChange: (styleId: string) => void
+  /** anchored comment threads for this conversation */
+  comments?: AnchorComment[]
+  onAddComment?: (messageId: string, quote: string, text: string) => void
+  onReplyComment?: (id: string, text: string) => void
+  onResolveComment?: (id: string) => void
+  onDeleteComment?: (id: string) => void
+  onAskInChat?: (comment: AnchorComment) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleOpen, setStyleOpen] = useState(false)
   const [shared, setShared] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [draftAnchor, setDraftAnchor] = useState<DraftAnchor | null>(null)
   const styleRef = useRef<HTMLDivElement>(null)
   const messages = conversation?.messages ?? []
+
+  // Stable per-message lookups so MessageItem memoization survives streaming.
+  const { quotesByMsg, countByMsg } = useMemo(() => {
+    const q = new Map<string, string[]>()
+    const n = new Map<string, number>()
+    for (const c of comments) {
+      if (c.resolved) continue
+      q.set(c.messageId, [...(q.get(c.messageId) ?? []), c.quote])
+      n.set(c.messageId, (n.get(c.messageId) ?? 0) + 1)
+    }
+    return { quotesByMsg: q, countByMsg: n }
+  }, [comments])
+
+  const startComment = (messageId: string, quote: string) => {
+    setDraftAnchor({ messageId, quote })
+    setCommentsOpen(true)
+  }
+
+  // Conversation switch → close any stale draft.
+  useEffect(() => {
+    setDraftAnchor(null)
+  }, [conversation?.id])
 
   const share = async () => {
     if (!onShare) return
@@ -174,6 +213,24 @@ export function ChatView({
         >
           <Ghost size={15} />
         </button>
+        {conversation && !empty && onAddComment && (
+          <button
+            onClick={() => setCommentsOpen(!commentsOpen)}
+            className={`relative shrink-0 rounded-lg p-2 transition-colors ${
+              commentsOpen
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            }`}
+            title="Comms log — anchored comments"
+          >
+            <MessagesSquare size={15} />
+            {comments.length > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                {comments.length}
+              </span>
+            )}
+          </button>
+        )}
         {conversation && !empty && (
           <button
             onClick={onExport}
@@ -201,7 +258,8 @@ export function ChatView({
         </button>
       </header>
 
-      {/* Messages / welcome */}
+      {/* Messages + comms log */}
+      <div className="flex min-h-0 flex-1">
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {empty ? (
           <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center px-6 pb-16">
@@ -255,16 +313,40 @@ export function ChatView({
                 message={m}
                 dark={dark}
                 isLast={m.id === lastAssistantId}
+                quotes={quotesByMsg.get(m.id)}
+                commentCount={countByMsg.get(m.id) ?? 0}
                 onRegenerate={onRegenerate}
                 onEdit={onEditMessage}
                 onSpeak={onSpeak}
                 onRunCode={onRunCode}
                 onPreview={onPreview}
+                onStartComment={onAddComment ? startComment : undefined}
+                onShowComments={onAddComment ? () => setCommentsOpen(true) : undefined}
               />
             ))}
             <div className="h-4" />
           </div>
         )}
+      </div>
+      {commentsOpen && onAddComment && (
+        <CommentsPanel
+          comments={comments}
+          draftAnchor={draftAnchor}
+          onSubmitDraft={(text) => {
+            if (draftAnchor) onAddComment(draftAnchor.messageId, draftAnchor.quote, text)
+            setDraftAnchor(null)
+          }}
+          onCancelDraft={() => setDraftAnchor(null)}
+          onReply={(id, text) => onReplyComment?.(id, text)}
+          onResolve={(id) => onResolveComment?.(id)}
+          onDelete={(id) => onDeleteComment?.(id)}
+          onAsk={(c) => onAskInChat?.(c)}
+          onClose={() => {
+            setCommentsOpen(false)
+            setDraftAnchor(null)
+          }}
+        />
+      )}
       </div>
     </div>
   )

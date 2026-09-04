@@ -49,6 +49,28 @@ export interface Conversation {
   style?: string
 }
 
+/** One entry inside an anchored comment thread (the first entry is the comment itself). */
+export interface CommentEntry {
+  id: string
+  text: string
+  createdAt: number
+}
+
+/**
+ * A comment thread anchored to an exact quote inside a chat message —
+ * Google-Docs-style side threads for AI conversations.
+ */
+export interface AnchorComment {
+  id: string
+  conversationId: string
+  messageId: string
+  /** exact selected text this thread is anchored to */
+  quote: string
+  entries: CommentEntry[]
+  resolved?: boolean
+  createdAt: number
+}
+
 /** A user-added model (any OpenRouter slug, e.g. "google/gemini-4-pro"). */
 export interface CustomModel {
   id: string

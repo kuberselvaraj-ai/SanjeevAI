@@ -1,4 +1,4 @@
-import type { Conversation, ImageJob, Settings, VideoJob } from './types'
+import type { AnchorComment, Conversation, ImageJob, Settings, VideoJob } from './types'
 import { DEFAULT_MODEL } from './models'
 import { BUNDLED_MOONSHOT_KEY } from './bundled-config'
 
@@ -7,6 +7,7 @@ const KEYS = {
   conversations: 'kimi-studio:conversations',
   videos: 'kimi-studio:videos',
   images: 'kimi-studio:images',
+  comments: 'kimi-studio:comments',
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -90,6 +91,8 @@ export const store = {
   // localStorage doesn't overflow.
   loadImages: (): ImageJob[] => readArray<ImageJob>(KEYS.images),
   saveImages: (v: ImageJob[]) => write(KEYS.images, v.slice(0, 8)),
+  loadComments: (): AnchorComment[] => readArray<AnchorComment>(KEYS.comments),
+  saveComments: (c: AnchorComment[]) => write(KEYS.comments, c),
 }
 
 export function uid(): string {
