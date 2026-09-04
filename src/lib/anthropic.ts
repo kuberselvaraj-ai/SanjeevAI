@@ -3,11 +3,11 @@ import type { ApiMessage, StreamCallbacks } from './kimi'
 
 /**
  * Desktop mode: call the Anthropic Messages API directly with the user's
- * own key. Model id is exactly "claude-fable-5"; adaptive thinking is
+ * own key. Model id is exactly "claude-fable-5-1"; adaptive thinking is
  * always on, so no temperature is sent. SSE events differ from OpenAI's
  * shape — parsed here and fed into the same callbacks.
  */
-const ANTHROPIC_MODEL = 'claude-fable-5'
+const ANTHROPIC_MODEL = 'claude-fable-5-1'
 
 function toAnthropic(messages: ApiMessage[]) {
   const systemParts: string[] = []

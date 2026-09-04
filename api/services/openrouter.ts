@@ -1,11 +1,11 @@
 /**
  * OpenRouter — one key unlocks the premium Western chat models
- * (Claude Fable 5, GPT-5.6 Sol) behind an OpenAI-compatible API.
+ * (Claude Fable 5.1, GPT-6 Astra, GPT-5.6 Sol) behind an OpenAI-compatible API.
  * https://openrouter.ai/docs — pay-per-use, card billing, no region lock.
  *
- * Model ids arrive as OpenRouter slugs ("anthropic/claude-fable-5"); if
+ * Model ids arrive as OpenRouter slugs ("anthropic/claude-fable-5.1"); if
  * OpenRouter renames a model, remap it in .env without a code change:
- *   OPENROUTER_MODEL_CLAUDE=anthropic/claude-fable-5
+ *   OPENROUTER_MODEL_CLAUDE=anthropic/claude-fable-5.1
  *   OPENROUTER_MODEL_GPT=openai/gpt-5.6-sol
  */
 

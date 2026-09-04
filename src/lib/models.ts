@@ -44,12 +44,12 @@ export const KIMI_MODELS: KimiModel[] = [
  * Premium Western models. First-party keys (ANTHROPIC_API_KEY /
  * OPENAI_API_KEY) are preferred; OpenRouter covers whichever is missing.
  * The id doubles as the OpenRouter slug; first-party calls map it to
- * claude-fable-5 / gpt-6-astra / gpt-5.6-sol (overridable via env on the server).
+ * claude-fable-5-1 / gpt-6-astra / gpt-5.6-sol (overridable via env on the server).
  */
 export const PREMIUM_CHAT_MODELS: KimiModel[] = [
   {
-    id: 'anthropic/claude-fable-5',
-    label: 'Claude Fable 5',
+    id: 'anthropic/claude-fable-5.1',
+    label: 'Claude Fable 5.1',
     description: 'Best writing & conversation · #1 overall quality',
     badge: 'Premium',
   },

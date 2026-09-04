@@ -80,14 +80,14 @@ export function resolveChatModel(
         ? { model: 'openai/gpt-6-astra', task, pinned: false }
         : { model: 'kimi-k3', task, pinned: true }
     case 'writing':
-      // Claude Fable 5 — best writing quality.
+      // Claude Fable 5.1 — best writing quality.
       return premium.claude
-        ? { model: 'anthropic/claude-fable-5', task, pinned: false }
+        ? { model: 'anthropic/claude-fable-5.1', task, pinned: false }
         : { model: 'kimi-k3', task, pinned: true }
     case 'chat':
     default:
       // Claude first for conversation; GPT as the premium understudy.
-      if (premium.claude) return { model: 'anthropic/claude-fable-5', task, pinned: false }
+      if (premium.claude) return { model: 'anthropic/claude-fable-5.1', task, pinned: false }
       if (premium.gpt) return { model: 'openai/gpt-5.6-sol', task, pinned: false }
       return { model: 'kimi-k3', task, pinned: true }
   }

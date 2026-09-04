@@ -1,10 +1,10 @@
 /**
- * Anthropic direct — Claude Fable 5 via the first-party Messages API.
+ * Anthropic direct — Claude Fable 5.1 via the first-party Messages API.
  * Preferred path when ANTHROPIC_API_KEY is set (no relay markup, prompt
  * caching, highest rate limits); OpenRouter remains the fallback.
  *
  * Fable 5 quirks (per Anthropic docs):
- * - model id is exactly "claude-fable-5" (override via ANTHROPIC_MODEL)
+ * - model id is exactly "claude-fable-5-1" (override via ANTHROPIC_MODEL)
  * - adaptive thinking is always on — sampling params like temperature are
  *   not accepted, so we omit them
  * - system prompt is a top-level param, not a message
@@ -77,7 +77,7 @@ export async function anthropicChatStream(payload: {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-fable-5",
+      model: process.env.ANTHROPIC_MODEL || "claude-fable-5-1",
       max_tokens: MAX_OUTPUT_TOKENS,
       ...(system ? { system } : {}),
       messages,

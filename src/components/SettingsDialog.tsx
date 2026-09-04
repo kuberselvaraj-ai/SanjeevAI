@@ -180,7 +180,7 @@ export function SettingsDialog({
               />
 
               <SecretField
-                label="Anthropic key (Claude Fable 5 chat — best writing)"
+                label="Anthropic key (Claude Fable 5.1 chat — best writing)"
                 value={draft.anthropicKey}
                 onChange={(v) => set('anthropicKey', v)}
                 placeholder="sk-ant-..."

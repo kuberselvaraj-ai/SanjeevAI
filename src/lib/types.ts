@@ -66,9 +66,9 @@ export interface Settings {
   falKey: string
   /** ElevenLabs key — premium voices (desktop mode) */
   elevenlabsKey: string
-  /** OpenRouter key — Claude Fable 5 & GPT-5.6 Sol chat fallback (desktop mode) */
+  /** OpenRouter key — Claude Fable 5.1 & GPT chat fallback (desktop mode) */
   openrouterKey: string
-  /** Anthropic key — Claude Fable 5 chat, first-party (desktop mode) */
+  /** Anthropic key — Claude Fable 5.1 chat, first-party (desktop mode) */
   anthropicKey: string
   /** defaults to https://api.moonshot.ai/v1 */
   moonshotBaseUrl: string

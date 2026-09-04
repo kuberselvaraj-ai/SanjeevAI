@@ -348,14 +348,14 @@ export default function Home() {
       // Premium-only: needs Claude or GPT available. The critic is always
       // cross-vendor (the draft always comes from the Kimi orchestrator).
       const councilModelId = premium.claude
-        ? 'anthropic/claude-fable-5'
+        ? 'anthropic/claude-fable-5.1'
         : premium.gpt
           ? 'openai/gpt-5.6-sol'
           : null
       const councilOn = agentRequested && settings.council && councilModelId !== null
 
       const runCouncil = () => {
-        const criticLabel = councilModelId === 'anthropic/claude-fable-5' ? 'Claude Fable 5' : 'GPT-5.6 Sol'
+        const criticLabel = councilModelId === 'anthropic/claude-fable-5.1' ? 'Claude Fable 5.1' : 'GPT-5.6 Sol'
         const { text: draftText, images } = stripImagesForReview(contentMirror)
         const councilMessages: ApiMessage[] = [
           { role: 'system', content: COUNCIL_SYSTEM_PROMPT },

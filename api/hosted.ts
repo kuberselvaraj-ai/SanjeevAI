@@ -83,7 +83,7 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       return c.json(
         {
           error:
-            "Premium models (Claude Fable 5, GPT-5.6 Sol) are not configured on the server yet — the site owner needs to add an Anthropic / OpenAI key (or an OpenRouter key). Meanwhile, Kimi K3 answers everything.",
+            "Premium models (Claude Fable 5.1, GPT-6 Astra) are not configured on the server yet — the site owner needs to add an Anthropic / OpenAI key (or an OpenRouter key). Meanwhile, Kimi K3 answers everything.",
         },
         503,
       );

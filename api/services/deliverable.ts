@@ -106,7 +106,7 @@ async function anthropicOnce(system: string, user: string): Promise<CouncilResul
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-fable-5",
+      model: process.env.ANTHROPIC_MODEL || "claude-fable-5-1",
       max_tokens: 16000,
       system,
       messages: [{ role: "user", content: user }],
@@ -121,7 +121,7 @@ async function anthropicOnce(system: string, user: string): Promise<CouncilResul
   if (!text.trim()) throw new Error("Anthropic returned no text");
   return {
     text,
-    label: "Claude Fable 5",
+    label: "Claude Fable 5.1",
     inputTokens: json.usage?.input_tokens ?? 0,
     outputTokens: json.usage?.output_tokens ?? 0,
   };
@@ -188,8 +188,8 @@ export async function refineWithCouncil(
       result = await openAiStyleOnce(
         "https://openrouter.ai/api/v1/chat/completions",
         openrouterKey(),
-        process.env.OPENROUTER_MODEL_CLAUDE || "anthropic/claude-fable-5",
-        "Claude Fable 5",
+        process.env.OPENROUTER_MODEL_CLAUDE || "anthropic/claude-fable-5.1",
+        "Claude Fable 5.1",
         COUNCIL_SYSTEM_PROMPT,
         user,
         { "HTTP-Referer": "https://sanjeevai.com", "X-Title": "Sanjeev AI" },

@@ -212,7 +212,7 @@ export function ChatView({
               How can I help you today?
             </h2>
             <p className="mt-3 max-w-md text-center text-sm leading-6 text-muted-foreground">
-              Chat with Kimi K3, Claude Fable 5, GPT-6 Astra and more — Auto mode picks
+              Chat with Kimi K3, Claude Fable 5.1, GPT-6 Astra and more — Auto mode picks
               the best model for each task, and the conversation continues seamlessly when
               it switches. Attach PDFs, Word docs, spreadsheets or images with the paperclip.
             </p>
