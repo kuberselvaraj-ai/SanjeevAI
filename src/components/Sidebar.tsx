@@ -130,14 +130,14 @@ export function Sidebar({
             <button
               key={tab.id}
               onClick={() => onViewChange(tab.id)}
-              className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
+              className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1.5 text-[10px] font-medium transition-colors ${
                 view === tab.id
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <tab.icon size={14} />
-              {tab.label}
+              <tab.icon size={15} className="shrink-0" />
+              <span className="truncate">{tab.label}</span>
               {tab.id === 'briefs' && briefsUnread > 0 && (
                 <span className="absolute -right-0.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9.5px] font-semibold text-white">
                   {briefsUnread}

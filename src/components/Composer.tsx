@@ -47,6 +47,7 @@ export function Composer({
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
   const [modelOpen, setModelOpen] = useState(false)
+  const [moreModelsOpen, setMoreModelsOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -325,54 +326,74 @@ export function Composer({
                 </button>
                 {modelOpen && (
                   <div className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
-                    <div className="border-b border-border px-3 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Model
-                    </div>
-                    {(
-                      [
-                        { heading: null, items: [AUTO_ENTRY] },
-                        { heading: 'Kimi', items: KIMI_MODELS },
-                        { heading: 'Premium · via OpenRouter', items: PREMIUM_CHAT_MODELS },
-                        ...(customList.length
-                          ? [{ heading: 'Custom', items: customList } as const]
-                          : []),
-                      ] as const
-                    ).map((section, si) => (
-                      <div key={si}>
-                        {section.heading && (
-                          <div className="border-t border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                            {section.heading}
-                          </div>
+                    {/* The four that matter — everything else lives under "More models" */}
+                    {[AUTO_ENTRY, KIMI_MODELS[0], ...PREMIUM_CHAT_MODELS.filter((m) =>
+                      ['anthropic/claude-fable-5.1', 'openai/gpt-6-astra'].includes(m.id),
+                    )].map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          onModelChange(m.id)
+                          setModelOpen(false)
+                        }}
+                        className={`flex w-full items-start justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent ${
+                          m.id === model ? 'bg-accent/60' : ''
+                        }`}
+                      >
+                        <span>
+                          <span className="block text-sm font-medium">{m.label}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {m.description}
+                          </span>
+                        </span>
+                        {m.badge && (
+                          <span className="mt-0.5 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                            {m.badge}
+                          </span>
                         )}
-                        {section.items.map((m) => (
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setMoreModelsOpen((v) => !v)}
+                      className="flex w-full items-center justify-between border-t border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      More models
+                      <ChevronDown
+                        size={12}
+                        className={moreModelsOpen ? 'rotate-180 transition-transform' : 'transition-transform'}
+                      />
+                    </button>
+                    {moreModelsOpen && (
+                      <div className="border-t border-border">
+                        {[
+                          ...KIMI_MODELS.slice(1),
+                          ...PREMIUM_CHAT_MODELS.filter(
+                            (m) => !['anthropic/claude-fable-5.1', 'openai/gpt-6-astra'].includes(m.id),
+                          ),
+                          ...customList,
+                        ].map((m) => (
                           <button
                             key={m.id}
                             onClick={() => {
                               onModelChange(m.id)
                               setModelOpen(false)
                             }}
-                            className={`flex w-full items-start justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent ${
+                            className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-accent ${
                               m.id === model ? 'bg-accent/60' : ''
                             }`}
                           >
-                            <span>
-                              <span className="block text-sm font-medium">{m.label}</span>
-                              <span className="block text-xs text-muted-foreground">
-                                {m.description}
-                              </span>
-                            </span>
+                            <span className="text-[13px] font-medium">{m.label}</span>
                             {m.badge && (
-                              <span className="mt-0.5 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                                 {m.badge}
                               </span>
                             )}
                           </button>
                         ))}
                       </div>
-                    ))}
+                    )}
                     <div className="border-t border-border px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-                      Auto routes every message to the strongest model for the task — the
-                      conversation continues seamlessly. Images always go to Kimi K3 (vision).
+                      Auto picks the strongest model per message.
                     </div>
                   </div>
                 )}
