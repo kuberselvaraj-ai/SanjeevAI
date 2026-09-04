@@ -17,6 +17,7 @@ import {
 import type { AnchorComment, Conversation } from '@/lib/types'
 import type { CodeRunResult } from '@/lib/code'
 import { STYLE_PRESETS } from '@/lib/styles'
+import { fmtTokens } from '@/lib/contextBudget'
 import { MessageItem } from './MessageItem'
 import { CommentsPanel, type DraftAnchor } from './CommentsPanel'
 
@@ -65,6 +66,7 @@ export function ChatView({
   onResolveComment,
   onDeleteComment,
   onAskInChat,
+  ctxStats,
 }: {
   conversation: Conversation | null
   dark: boolean
@@ -89,6 +91,8 @@ export function ChatView({
   onResolveComment?: (id: string) => void
   onDeleteComment?: (id: string) => void
   onAskInChat?: (comment: AnchorComment) => void
+  /** last turn's context-meter reading (estimated tokens sent / saved) */
+  ctxStats?: { sent: number; saved: number } | null
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleOpen, setStyleOpen] = useState(false)
@@ -144,6 +148,27 @@ export function ChatView({
   const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant')?.id
   const style = STYLE_PRESETS.find((s) => s.id === (conversation?.style ?? 'normal'))
 
+  // Live context load — everything that would ride along with the next send.
+  const liveCtx = useMemo(
+    () =>
+      Math.ceil(
+        messages.reduce(
+          (n, m) =>
+            n +
+            m.content.length +
+            (m.reasoning?.length ?? 0) +
+            (m.attachments ?? []).reduce(
+              (x, a) => x + (a.extractedText?.length ?? 0) + (a.dataUrl?.length ?? 0),
+              0,
+            ),
+          0,
+        ) / 4,
+      ),
+    [messages],
+  )
+  const ctxColor =
+    liveCtx < 32_000 ? '#34d399' : liveCtx < 96_000 ? '#fbbf24' : '#f95e2c'
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Top bar */}
@@ -164,6 +189,28 @@ export function ChatView({
           </span>
         )}
         {headerExtra}
+
+        {/* Context meter — live token load + diet savings */}
+        {!empty && (
+          <span
+            className="hidden shrink-0 cursor-default items-center gap-1.5 rounded-full border border-border px-2 py-1 font-telemetry text-[9.5px] tracking-[0.1em] text-muted-foreground md:flex"
+            title={`≈${liveCtx.toLocaleString()} tokens in context right now.${
+              ctxStats
+                ? ` Last turn sent ≈${ctxStats.sent.toLocaleString()}${
+                    ctxStats.saved > 0
+                      ? ` — the context diet saved ≈${ctxStats.saved.toLocaleString()} tokens (stale documents trimmed).`
+                      : '.'
+                  }`
+                : ''
+            }`}
+          >
+            <span className="led" style={{ color: ctxColor, animation: 'none' }} />
+            CTX {fmtTokens(liveCtx)}
+            {ctxStats && ctxStats.saved > 0 && (
+              <span style={{ color: '#34d399' }}>−{fmtTokens(ctxStats.saved)}</span>
+            )}
+          </span>
+        )}
 
         {/* Style picker */}
         {conversation && (

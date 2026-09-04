@@ -33,6 +33,7 @@ import { streamOpenAi } from '@/lib/openai'
 import { styleInstruction } from '@/lib/styles'
 import { RESEARCH_PROMPT } from '@/lib/research'
 import { memoryContext } from '@/lib/memory'
+import { estimateMessagesTokens, slimHistory } from '@/lib/contextBudget'
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
 import { Sidebar, type View } from '@/components/Sidebar'
@@ -87,6 +88,8 @@ export default function Home() {
   const [vault, setVault] = useState<VaultFile[]>([])
   const [vaultOpen, setVaultOpen] = useState(false)
   const [pendingVault, setPendingVault] = useState<VaultFile[]>([])
+  /** last turn's context-meter reading (estimated tokens) */
+  const [ctxStats, setCtxStats] = useState<{ sent: number; saved: number } | null>(null)
 
   const refreshVault = useCallback(async () => {
     setVault(await listVaultFiles())
@@ -380,10 +383,18 @@ export default function Home() {
       }
 
       const apiMessages = buildApiMessages(conv, baseMessages, resolved, agentRequested)
+      // Context diet: stale documents and ancient mega-replies are trimmed
+      // before anything is sent — for every model, not just premium ones.
+      const slim = slimHistory(apiMessages)
       // Premium models: smaller context, higher price — slide the window.
       const finalMessages = isPremiumModel(resolved)
-        ? fitMessagesToContext(apiMessages)
-        : apiMessages
+        ? fitMessagesToContext(slim.messages)
+        : slim.messages
+      const rawTokens = estimateMessagesTokens(apiMessages)
+      setCtxStats({
+        sent: estimateMessagesTokens(finalMessages),
+        saved: Math.max(0, rawTokens - estimateMessagesTokens(finalMessages)),
+      })
       // $web_search is a Moonshot builtin — not available through OpenRouter.
       const useWebSearch = (settings.webSearch || settings.deepResearch) && !isPremiumModel(resolved)
 
@@ -1110,6 +1121,7 @@ export default function Home() {
               onResolveComment={resolveComment}
               onDeleteComment={deleteComment}
               onAskInChat={askInChat}
+              ctxStats={ctxStats}
               headerExtra={
                 noKey ? (
                   <button
