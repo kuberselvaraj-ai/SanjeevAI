@@ -39,7 +39,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Sidebar, type View } from '@/components/Sidebar'
 import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
-import { speakText, transcribeAudio, voiceAvailable } from '@/lib/voice'
+import { speakText, stopSpeaking, transcribeAudio, voiceAvailable } from '@/lib/voice'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { BriefsView } from '@/components/BriefsView'
 import { VideoView } from '@/components/VideoView'
@@ -90,6 +90,22 @@ export default function Home() {
   const [pendingVault, setPendingVault] = useState<VaultFile[]>([])
   /** last turn's context-meter reading (estimated tokens) */
   const [ctxStats, setCtxStats] = useState<{ sent: number; saved: number } | null>(null)
+  /** hands-free voice loop: talk → transcribe → send → spoken reply */
+  const [voiceMode, setVoiceMode] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
+  const toggleVoiceMode = useCallback(() => {
+    setVoiceMode((v) => {
+      if (v) {
+        stopSpeaking()
+        setSpeaking(false)
+      }
+      return !v
+    })
+  }, [])
+  const bargeIn = useCallback(() => {
+    stopSpeaking()
+    setSpeaking(false)
+  }, [])
 
   const refreshVault = useCallback(async () => {
     setVault(await listVaultFiles())
@@ -412,6 +428,13 @@ export default function Home() {
         }))
         setStreaming(false)
         if (hosted) trpcUtils.usage.mine.invalidate()
+        // Voice mode: the finished reply is read aloud automatically.
+        if (voiceMode && contentMirror.trim() && voiceAvailable(settings, hosted)) {
+          setSpeaking(true)
+          speakText(settings, contentMirror, hosted, () => setSpeaking(false)).catch(() =>
+            setSpeaking(false),
+          )
+        }
       }
 
       // ── Council: a second vendor's model refines the deliverable ───────
@@ -615,7 +638,7 @@ export default function Home() {
         )
       }
     },
-    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation],
+    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation, voiceMode],
   )
 
   const stop = useCallback(() => {
@@ -1169,6 +1192,10 @@ export default function Home() {
               onRemovePendingVault={(id) =>
                 setPendingVault((prev) => prev.filter((v) => v.id !== id))
               }
+              voiceMode={voiceMode}
+              speaking={speaking}
+              onToggleVoiceMode={toggleVoiceMode}
+              onVoiceBargeIn={bargeIn}
             />
           </div>
           {artifact && (

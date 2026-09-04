@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
-import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic, Archive } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic, Archive, AudioLines } from 'lucide-react'
 import { AUTO_ENTRY, KIMI_MODELS, PREMIUM_CHAT_MODELS, modelLabel, type KimiModel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
 import type { VaultFile } from '@/lib/types'
+import { VoiceModeBar } from './VoiceModeBar'
 
 export interface PendingFile {
   file: File
@@ -29,6 +30,10 @@ export function Composer({
   vaultCount = 0,
   pendingVault = [],
   onRemovePendingVault,
+  voiceMode = false,
+  speaking = false,
+  onToggleVoiceMode,
+  onVoiceBargeIn,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -53,6 +58,11 @@ export function Composer({
   /** vault files picked for this message */
   pendingVault?: VaultFile[]
   onRemovePendingVault?: (id: string) => void
+  /** hands-free voice mode (requires `voice`) */
+  voiceMode?: boolean
+  speaking?: boolean
+  onToggleVoiceMode?: () => void
+  onVoiceBargeIn?: () => void
 }) {
   const customList = customModels ?? []
   const [text, setText] = useState('')
@@ -165,6 +175,21 @@ export function Composer({
     requestAnimationFrame(() => {
       if (taRef.current) taRef.current.style.height = 'auto'
     })
+  }
+
+  // Voice mode swaps the whole composer for the hands-free loop bar.
+  if (voiceMode && voice && onToggleVoiceMode) {
+    return (
+      <VoiceModeBar
+        streaming={streaming}
+        speaking={speaking}
+        transcribe={voice.transcribe}
+        onSend={(t) => onSend(t, [])}
+        onStop={onStop}
+        onBargeIn={() => onVoiceBargeIn?.()}
+        onExit={onToggleVoiceMode}
+      />
+    )
   }
 
   return (
@@ -478,6 +503,19 @@ export function Composer({
                 >
                   {transcribing ? <Loader2 size={15} className="animate-spin" /> : <Mic size={15} />}
                   {recording && <span className="hidden sm:inline">Stop</span>}
+                </button>
+              )}
+
+              {/* Voice mode — hands-free talk loop */}
+              {voice && onToggleVoiceMode && (
+                <button
+                  onClick={onToggleVoiceMode}
+                  disabled={disabled}
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-40"
+                  title="Voice mode — talk hands-free; replies are read aloud"
+                >
+                  <AudioLines size={15} />
+                  <span className="hidden sm:inline">Voice</span>
                 </button>
               )}
             </div>

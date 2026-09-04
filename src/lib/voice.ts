@@ -166,6 +166,7 @@ export async function speakText(
   settings: Settings,
   text: string,
   hosted: boolean,
+  onEnded?: () => void,
 ): Promise<void> {
   currentAudio?.pause()
   currentAudio = null
@@ -210,7 +211,11 @@ export async function speakText(
   const url = URL.createObjectURL(audioBlob)
   const audio = new Audio(url)
   currentAudio = audio
-  audio.onended = () => URL.revokeObjectURL(url)
+  audio.onended = () => {
+    URL.revokeObjectURL(url)
+    if (currentAudio === audio) currentAudio = null
+    onEnded?.()
+  }
   await audio.play()
 }
 
