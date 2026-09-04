@@ -26,6 +26,35 @@ import { startScheduler } from "./scheduler";
 const MAX_MESSAGE_CHARS = 400_000;
 const MAX_EXTRACT_BYTES = 30 * 1024 * 1024;
 
+/** EXTRA_MODELS env → picker entries. JSON array, or "slug:Label,slug2:Label2". */
+function parseExtraModels(raw?: string): { id: string; label: string; description?: string }[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((m): m is { id: string; label?: string; description?: string } =>
+          Boolean(m && typeof (m as { id?: unknown }).id === "string" && (m as { id: string }).id.includes("/")),
+        )
+        .map((m) => ({
+          id: m.id,
+          label: m.label || m.id.split("/").pop() || m.id,
+          description: m.description,
+        }));
+    }
+  } catch {
+    // not JSON — fall through to the comma format
+  }
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.includes("/"))
+    .map((part) => {
+      const [id, ...rest] = part.split(":");
+      return { id: id.trim(), label: rest.join(":").trim() || id.split("/").pop() || id };
+    });
+}
+
 interface ChatRequestBody {
   model?: string;
   messages?: Array<{ content?: unknown }>;
@@ -44,6 +73,10 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       gpt: openaiConfigured() || openrouterConfigured(),
       voice: elevenlabsConfigured() || dashscopeConfigured(),
       video: minimaxConfigured() || falVideoConfigured(),
+      // Admin-added models without a code change:
+      // EXTRA_MODELS='[{"id":"google/gemini-4-pro","label":"Gemini 4 Pro"}]'
+      // (a plain "slug:Label,slug2:Label2" list works too)
+      extraModels: parseExtraModels(process.env.EXTRA_MODELS),
     }),
   );
 
@@ -120,7 +153,7 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     // Pick the upstream: first-party key wins, OpenRouter covers the gaps.
     const premiumUpstream = () => {
       if (isClaude && anthropicConfigured())
-        return { label: "Anthropic", call: anthropicChatStream({ messages: messages as never }) };
+        return { label: "Anthropic", call: anthropicChatStream({ messages: messages as never, model }) };
       if (isGpt && openaiConfigured())
         return { label: "OpenAI", call: openAiChatStream({ messages, temperature, model }) };
       return { label: "OpenRouter", call: openRouterChatStream({ model, messages, temperature }) };

@@ -67,6 +67,7 @@ function toAnthropicMessages(messages: InMessage[]) {
 
 export async function anthropicChatStream(payload: {
   messages: InMessage[];
+  model?: string;
 }): Promise<Response> {
   const { system, messages } = toAnthropicMessages(payload.messages);
   const res = await fetch(`${ROOT}/v1/messages`, {
@@ -77,7 +78,11 @@ export async function anthropicChatStream(payload: {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-fable-5-1",
+      model:
+        process.env.ANTHROPIC_MODEL ||
+        // "anthropic/claude-fable-5.1" → "claude-fable-5-1" (API id uses dashes)
+        payload.model?.replace(/^anthropic\//, "").replace(/\./g, "-") ||
+        "claude-fable-5-1",
       max_tokens: MAX_OUTPUT_TOKENS,
       ...(system ? { system } : {}),
       messages,

@@ -49,6 +49,13 @@ export interface Conversation {
   style?: string
 }
 
+/** A user-added model (any OpenRouter slug, e.g. "google/gemini-4-pro"). */
+export interface CustomModel {
+  id: string
+  label: string
+  description?: string
+}
+
 export interface Settings {
   moonshotKey: string
   minimaxKey: string
@@ -83,6 +90,8 @@ export interface Settings {
   deepResearch: boolean
   /** premium council: Claude/GPT reviews & refines deliverables before you see them */
   council: boolean
+  /** user-added models — appear in the picker, routed via first-party key or OpenRouter */
+  customModels: CustomModel[]
 }
 
 export type VideoStatus = 'queued' | 'processing' | 'success' | 'failed'

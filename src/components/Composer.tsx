@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic } from 'lucide-react'
-import { AUTO_ENTRY, KIMI_MODELS, PREMIUM_CHAT_MODELS, modelLabel } from '@/lib/models'
+import { AUTO_ENTRY, KIMI_MODELS, PREMIUM_CHAT_MODELS, modelLabel, type KimiModel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
 
 export interface PendingFile {
@@ -23,6 +23,7 @@ export function Composer({
   deepResearch,
   onToggleDeepResearch,
   voice,
+  customModels,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -39,7 +40,10 @@ export function Composer({
   onToggleDeepResearch: () => void
   /** Voice input (Whisper). Null = not configured. */
   voice: { transcribe: (blob: Blob) => Promise<string> } | null
+  /** Custom models (user-added in Settings, or server-provided on hosted) */
+  customModels?: KimiModel[]
 }) {
+  const customList = customModels ?? []
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
   const [modelOpen, setModelOpen] = useState(false)
@@ -329,6 +333,9 @@ export function Composer({
                         { heading: null, items: [AUTO_ENTRY] },
                         { heading: 'Kimi', items: KIMI_MODELS },
                         { heading: 'Premium · via OpenRouter', items: PREMIUM_CHAT_MODELS },
+                        ...(customList.length
+                          ? [{ heading: 'Custom', items: customList } as const]
+                          : []),
                       ] as const
                     ).map((section, si) => (
                       <div key={si}>

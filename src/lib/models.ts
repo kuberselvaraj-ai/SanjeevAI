@@ -81,6 +81,18 @@ export const DEFAULT_MODEL = AUTO_MODEL
 /** Premium models carry the OpenRouter "vendor/model" slug shape. */
 export const isPremiumModel = (id: string) => id.includes('/')
 
+/** Custom (user- or server-added) models — any OpenRouter-compatible slug. */
+export function toKimiModels(custom: { id: string; label: string; description?: string }[]): KimiModel[] {
+  return custom
+    .filter((m) => m.id.includes('/'))
+    .map((m) => ({
+      id: m.id,
+      label: m.label || m.id.split('/').pop() || m.id,
+      description: m.description ?? 'Custom model',
+      badge: 'Custom',
+    }))
+}
+
 export function modelLabel(id: string): string {
   return CHAT_MODELS.find((m) => m.id === id)?.label ?? id
 }

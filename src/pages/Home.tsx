@@ -18,7 +18,7 @@ import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
-import { AUTO_MODEL, DEFAULT_SYSTEM_PROMPT, isPremiumModel } from '@/lib/models'
+import { AUTO_MODEL, DEFAULT_SYSTEM_PROMPT, isPremiumModel, toKimiModels } from '@/lib/models'
 import {
   fitMessagesToContext,
   resolveChatModel,
@@ -86,7 +86,11 @@ export default function Home() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [artifact, setArtifact] = useState<Artifact | null>(null)
   /** Which providers the hosted server has keys for — drives Auto routing. */
-  const [caps, setCaps] = useState<{ claude?: boolean; gpt?: boolean } | null>(null)
+  const [caps, setCaps] = useState<{
+    claude?: boolean
+    gpt?: boolean
+    extraModels?: { id: string; label: string; description?: string }[]
+  } | null>(null)
 
   useEffect(() => {
     if (!hosted) return
@@ -509,7 +513,7 @@ export default function Home() {
         )
       } else if (resolved.startsWith('anthropic/')) {
         if (settings.anthropicKey) {
-          streamAnthropic(settings, finalMessages, callbacks, controller.signal)
+          streamAnthropic(settings, finalMessages, callbacks, controller.signal, resolved)
         } else {
           streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
         }
@@ -518,6 +522,21 @@ export default function Home() {
           streamOpenAi(settings, finalMessages, callbacks, controller.signal, resolved)
         } else {
           streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
+        }
+      } else if (resolved.includes('/')) {
+        // Custom / future models — any OpenRouter-compatible slug.
+        if (hosted) {
+          hostedStreamChat(
+            { model: resolved, messages: finalMessages, temperature: settings.temperature, webSearch: false },
+            callbacks,
+            controller.signal,
+          )
+        } else if (settings.openrouterKey) {
+          streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
+        } else {
+          callbacks.onError(
+            'This model needs an OpenRouter API key — add one in Settings → API keys, then try again.',
+          )
         }
       } else {
         streamChat(
@@ -951,6 +970,10 @@ export default function Home() {
             />
             <Composer
               model={currentModel}
+              customModels={toKimiModels([
+                ...(caps?.extraModels ?? []),
+                ...settings.customModels,
+              ]).filter((m, i, all) => all.findIndex((x) => x.id === m.id) === i)}
               onModelChange={setActiveModel}
               onSend={send}
               onStop={stop}

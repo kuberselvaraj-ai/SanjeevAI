@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X, Eye, EyeOff, ExternalLink, Brain, Trash2 } from 'lucide-react'
 import type { Settings } from '@/lib/types'
-import { CHAT_MODELS } from '@/lib/models'
+import { CHAT_MODELS, toKimiModels } from '@/lib/models'
 import { loadMemories, saveMemories } from '@/lib/memory'
 import { Switch } from '@/components/ui/switch'
 
@@ -69,6 +69,8 @@ export function SettingsDialog({
   const [draft, setDraft] = useState<Settings>({ ...settings })
   const [memories, setMemories] = useState<string[]>(() => loadMemories())
   const [newMemory, setNewMemory] = useState('')
+  const [customId, setCustomId] = useState('')
+  const [customLabel, setCustomLabel] = useState('')
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setDraft((d) => ({ ...d, [k]: v }))
   const updateMemories = (list: string[]) => {
@@ -206,15 +208,84 @@ export function SettingsDialog({
               onChange={(e) => set('defaultModel', e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
             >
-              {CHAT_MODELS.map((m) => (
+              {[...CHAT_MODELS, ...toKimiModels(draft.customModels)].map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label} ({m.id})
                 </option>
               ))}
-              {!CHAT_MODELS.some((m) => m.id === draft.defaultModel) && (
-                <option value={draft.defaultModel}>{draft.defaultModel}</option>
-              )}
+              {!CHAT_MODELS.some((m) => m.id === draft.defaultModel) &&
+                !draft.customModels.some((m) => m.id === draft.defaultModel) && (
+                  <option value={draft.defaultModel}>{draft.defaultModel}</option>
+                )}
             </select>
+          </div>
+
+          {/* Custom models — integrate any new model the day it ships */}
+          <div className="rounded-lg border border-border px-3 py-3">
+            <div className="text-[13px] font-medium">Custom models</div>
+            <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+              Add any new model by its OpenRouter slug (e.g. <span className="font-mono-code">openai/gpt-7</span> or{' '}
+              <span className="font-mono-code">google/gemini-4-pro</span>). It appears in the picker
+              instantly — OpenAI/Anthropic slugs use your first-party key when present, everything
+              else goes through OpenRouter.
+            </p>
+            {draft.customModels.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {draft.customModels.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-2.5 py-1.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-medium">{m.label}</div>
+                      <div className="truncate font-mono-code text-[11px] text-muted-foreground">
+                        {m.id}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        set('customModels', draft.customModels.filter((x) => x.id !== m.id))
+                      }
+                      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      title="Remove model"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-2 flex gap-2">
+              <input
+                value={customLabel}
+                onChange={(e) => setCustomLabel(e.target.value)}
+                placeholder="Label (e.g. GPT-7)"
+                className="w-2/5 rounded-lg border border-input bg-background px-2.5 py-1.5 text-[13px] outline-none focus:ring-1 focus:ring-ring"
+              />
+              <input
+                value={customId}
+                onChange={(e) => setCustomId(e.target.value)}
+                placeholder="vendor/model-slug"
+                className="flex-1 rounded-lg border border-input bg-background px-2.5 py-1.5 font-mono-code text-[13px] outline-none focus:ring-1 focus:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const id = customId.trim()
+                  if (!id.includes('/') || draft.customModels.some((m) => m.id === id)) return
+                  set('customModels', [
+                    ...draft.customModels,
+                    { id, label: customLabel.trim() || id.split('/').pop() || id },
+                  ])
+                  setCustomId('')
+                  setCustomLabel('')
+                }}
+                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground hover:opacity-90"
+              >
+                Add
+              </button>
+            </div>
           </div>
 
           <div>

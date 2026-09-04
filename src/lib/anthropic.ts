@@ -44,7 +44,10 @@ export async function streamAnthropic(
   messages: ApiMessage[],
   cb: StreamCallbacks,
   signal?: AbortSignal,
+  model?: string,
 ): Promise<void> {
+  // "anthropic/claude-fable-5.1" → "claude-fable-5-1" (API id uses dashes)
+  const modelName = model?.replace(/^anthropic\//, '').replace(/\./g, '-') || ANTHROPIC_MODEL
   try {
     const { system, messages: msgs } = toAnthropic(messages)
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -56,7 +59,7 @@ export async function streamAnthropic(
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
+        model: modelName,
         max_tokens: 16000,
         ...(system ? { system } : {}),
         messages: msgs,
