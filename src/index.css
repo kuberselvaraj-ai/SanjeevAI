@@ -36,33 +36,40 @@
   }
 
   .dark {
-    --background: 26 12% 9%;
-    --foreground: 45 28% 90%;
-    --card: 26 12% 12%;
-    --card-foreground: 45 28% 90%;
-    --popover: 26 12% 12%;
-    --popover-foreground: 45 28% 90%;
-    --primary: 14 78% 55%;
-    --primary-foreground: 26 20% 8%;
-    --secondary: 26 10% 18%;
-    --secondary-foreground: 45 24% 88%;
-    --muted: 26 10% 17%;
-    --muted-foreground: 38 12% 60%;
-    --accent: 26 12% 20%;
-    --accent-foreground: 45 26% 90%;
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 45 28% 92%;
-    --border: 28 10% 22%;
-    --input: 28 10% 22%;
-    --ring: 14 78% 55%;
-    --sidebar-background: 27 13% 8%;
-    --sidebar-foreground: 45 24% 86%;
-    --sidebar-primary: 14 78% 55%;
-    --sidebar-primary-foreground: 26 20% 8%;
-    --sidebar-accent: 26 12% 15%;
-    --sidebar-accent-foreground: 45 26% 90%;
-    --sidebar-border: 28 10% 18%;
-    --sidebar-ring: 14 78% 55%;
+    /* Mission Control — dark intelligence palette.
+       Ground #050810 · panels #0c1220/#111a2b · hairlines #1a2540
+       Ignition orange #F95E2C = action · telemetry cyan #22d3ee = live
+       mint #34d399 nominal · amber #fbbf24 caution · red #f87171 critical */
+    --background: 224 52% 4%;
+    --foreground: 218 43% 93%;
+    --card: 222 45% 9%;
+    --card-foreground: 218 43% 93%;
+    --popover: 222 45% 9%;
+    --popover-foreground: 218 43% 93%;
+    --primary: 15 94% 57%;
+    --primary-foreground: 16 70% 7%;
+    --secondary: 219 43% 12%;
+    --secondary-foreground: 218 43% 93%;
+    --muted: 219 43% 12%;
+    --muted-foreground: 219 22% 60%;
+    --accent: 219 43% 15%;
+    --accent-foreground: 218 43% 93%;
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 224 52% 6%;
+    --border: 222 42% 18%;
+    --input: 222 42% 18%;
+    --ring: 188 86% 53%;
+    --telemetry: 188 86% 53%;
+    --nominal: 158 64% 52%;
+    --caution: 43 96% 56%;
+    --sidebar-background: 222 45% 6%;
+    --sidebar-foreground: 218 40% 88%;
+    --sidebar-primary: 15 94% 57%;
+    --sidebar-primary-foreground: 16 70% 7%;
+    --sidebar-accent: 219 43% 12%;
+    --sidebar-accent-foreground: 218 40% 88%;
+    --sidebar-border: 222 42% 16%;
+    --sidebar-ring: 188 86% 53%;
   }
 }
 
@@ -72,9 +79,18 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
       'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Mission Control texture — faint scanlines over the dark ground */
+  .dark body {
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 2px,
+      hsl(222 45% 9% / 0.35) 3px
+    );
   }
 }
 
@@ -83,14 +99,107 @@
     font-family: ui-serif, Georgia, 'Songti SC', 'STSong', 'SimSun', serif;
   }
   .font-mono-code {
-    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  /* UI chrome — mono, uppercase, wide tracking */
+  .font-telemetry {
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  .text-telemetry {
+    color: hsl(188 86% 53%);
   }
 }
 
-/* Slim, warm scrollbars */
+/* ── Mission Control motion system ─────────────────────────────── */
+
+/* Status LED — pulsing dot with glow (nominal = mint, live = cyan) */
+@keyframes led-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 6px currentColor;
+  }
+  50% {
+    opacity: 0.45;
+    box-shadow: 0 0 2px currentColor;
+  }
+}
+.led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: led-pulse 1.5s ease-in-out infinite;
+}
+
+/* Radar sweep — rotating conic gradient inside a ring */
+@keyframes radar-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.radar-sweep {
+  background: conic-gradient(from 0deg, hsl(188 86% 53% / 0.65), transparent 90deg);
+  animation: radar-rotate 4.2s linear infinite;
+}
+
+/* Launch ring — circular progress spinner for pipeline stages */
+@keyframes ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.launch-ring {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: conic-gradient(hsl(15 94% 57%) 0 25%, transparent 25% 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
+  mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
+  animation: ring-spin 0.9s linear infinite;
+}
+
+/* Boot splash */
+@keyframes boot-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.boot-line {
+  animation: boot-line-in 0.18s ease-out both;
+}
+@keyframes boot-fade-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+.boot-fade {
+  animation: boot-fade-out 0.45s ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .led,
+  .radar-sweep,
+  .launch-ring,
+  .boot-line,
+  .boot-fade {
+    animation: none !important;
+  }
+}
+
+/* Thin themed scrollbars */
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-thumb {
   background: hsl(var(--border));

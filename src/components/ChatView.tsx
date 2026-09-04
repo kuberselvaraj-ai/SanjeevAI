@@ -205,10 +205,20 @@ export function ChatView({
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {empty ? (
           <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center px-6 pb-16">
-            <span className="font-display flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-2xl font-semibold text-primary-foreground shadow-md">
-              S
-            </span>
-            <h2 className="font-display mt-6 text-center text-3xl font-semibold tracking-tight md:text-4xl">
+            <div className="relative h-14 w-14">
+              <div className="absolute inset-0 rounded-full border border-border" />
+              <div className="absolute inset-[5px] rounded-full border border-border/60" />
+              <div className="radar-sweep absolute inset-0 rounded-full" />
+              <div
+                className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                style={{ background: '#f95e2c', boxShadow: '0 0 14px #f95e2c' }}
+              />
+            </div>
+            <p className="font-telemetry mt-6 flex items-center gap-2 text-[10.5px] text-muted-foreground">
+              <span className="led" style={{ color: '#34d399' }} />
+              Mission ready
+            </p>
+            <h2 className="font-display mt-3 text-center text-3xl font-semibold tracking-tight md:text-4xl">
               How can I help you today?
             </h2>
             <p className="mt-3 max-w-md text-center text-sm leading-6 text-muted-foreground">

@@ -436,8 +436,8 @@ export function Composer({
               <button
                 onClick={submit}
                 disabled={(!text.trim() && files.length === 0 && !workspaceSummary) || disabled}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
-                title="Send"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_18px_hsl(var(--primary)/0.45)] transition-all hover:opacity-90 hover:shadow-[0_0_26px_hsl(var(--primary)/0.6)] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
+                title="Launch"
               >
                 <ArrowUp size={16} strokeWidth={2.5} />
               </button>

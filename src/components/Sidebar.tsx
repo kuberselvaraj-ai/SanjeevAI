@@ -77,15 +77,27 @@ export function Sidebar({
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Brand */}
+        {/* Brand — mission control mark */}
         <div className="flex items-center justify-between px-5 pb-2 pt-5">
-          <div>
-            <h1 className="font-display text-[22px] font-semibold leading-none tracking-tight">
-              Sanjeev AI
-            </h1>
-            <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-              Powered by the Kimi API
-            </p>
+          <div className="flex items-center gap-2.5">
+            <div className="relative h-7 w-7 shrink-0">
+              <div className="absolute inset-0 rounded-full border border-sidebar-border" />
+              <div className="absolute inset-[3px] rounded-full border border-sidebar-border/60" />
+              <div className="radar-sweep absolute inset-0 rounded-full" />
+              <div
+                className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                style={{ background: '#22d3ee', boxShadow: '0 0 6px #22d3ee' }}
+              />
+            </div>
+            <div>
+              <h1 className="font-telemetry text-[13px] font-semibold leading-none tracking-[0.22em]">
+                Sanjeev AI
+              </h1>
+              <p className="mt-1.5 flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="led" style={{ color: '#34d399' }} />
+                All systems nominal
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}

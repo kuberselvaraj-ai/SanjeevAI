@@ -4,9 +4,12 @@ import Login from "./pages/Login"
 import Admin from "./pages/Admin"
 import SharePage from "./pages/SharePage"
 import NotFound from "./pages/NotFound"
+import { BootSplash } from './components/BootSplash'
 
 export default function App() {
   return (
+    <>
+    <BootSplash />
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
@@ -14,5 +17,6 @@ export default function App() {
       <Route path="/share/:slug" element={<SharePage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   )
 }
