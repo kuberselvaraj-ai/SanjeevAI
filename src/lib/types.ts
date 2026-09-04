@@ -116,6 +116,28 @@ export interface Settings {
   customModels: CustomModel[]
 }
 
+/**
+ * A file in the Mission Vault — upload once, reuse in any chat.
+ * Payloads live in IndexedDB (localStorage is too small); chats hold
+ * their own attachment copies, so deleting a vault entry never breaks history.
+ */
+export interface VaultFile {
+  id: string
+  /** sha-256 of the original file bytes — dedupe key */
+  hash: string
+  name: string
+  mimeType: string
+  size: number
+  kind: 'image' | 'doc'
+  dataUrl?: string
+  extractedText?: string
+  /** auto-derived + user tags for filtering */
+  tags: string[]
+  /** chats that have used this file */
+  usedIn: { conversationId: string; title: string; at: number }[]
+  createdAt: number
+}
+
 export type VideoStatus = 'queued' | 'processing' | 'success' | 'failed'
 
 export interface VideoJob {

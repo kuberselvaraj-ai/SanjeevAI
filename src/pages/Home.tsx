@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { KeyRound } from 'lucide-react'
-import type { AnchorComment, Attachment, ChatMessage, Conversation, ImageJob, Settings, VideoJob } from '@/lib/types'
+import type { AnchorComment, Attachment, ChatMessage, Conversation, ImageJob, Settings, VaultFile, VideoJob } from '@/lib/types'
 import { store, uid } from '@/lib/storage'
 import { streamChat, type ApiMessage, type MessagePart, type ToolCall } from '@/lib/kimi'
 import {
@@ -16,6 +16,8 @@ import {
 } from '@/lib/agent'
 import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
+import { findVaultByHash, hashFile, listVaultFiles, putVaultFile, deleteVaultFile, vaultEntryFrom } from '@/lib/vault'
+import { VaultDialog } from '@/components/VaultDialog'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
 import { AUTO_MODEL, DEFAULT_SYSTEM_PROMPT, isPremiumModel, toKimiModels } from '@/lib/models'
@@ -82,6 +84,16 @@ export default function Home() {
   const [videos, setVideos] = useState<VideoJob[]>(() => store.loadVideos())
   const [images, setImages] = useState<ImageJob[]>(() => store.loadImages())
   const [comments, setComments] = useState<AnchorComment[]>(() => store.loadComments())
+  const [vault, setVault] = useState<VaultFile[]>([])
+  const [vaultOpen, setVaultOpen] = useState(false)
+  const [pendingVault, setPendingVault] = useState<VaultFile[]>([])
+
+  const refreshVault = useCallback(async () => {
+    setVault(await listVaultFiles())
+  }, [])
+  useEffect(() => {
+    refreshVault()
+  }, [refreshVault])
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -638,7 +650,13 @@ export default function Home() {
       const userMsg: ChatMessage = {
         id: uid(),
         role: 'user',
-        content: text || (workspace ? `Let's work on the ${workspace.rootLabel} codebase.` : ''),
+        content:
+          text ||
+          (workspace
+            ? `Let's work on the ${workspace.rootLabel} codebase.`
+            : pendingVault.length > 0
+              ? `Sharing from the vault: ${pendingVault.map((v) => v.name).join(', ')}`
+              : ''),
         attachments: [],
         createdAt: Date.now(),
       }
@@ -671,16 +689,59 @@ export default function Home() {
         status: 'ready' as const,
       }))
 
-      // Upload / extract attachments first
-      let attachments: Attachment[] = [...workspaceAttachments]
+      // Upload / extract attachments first.
+      // Vault picks ride along as ready-made attachments — zero re-processing.
+      const vaultAttachments: Attachment[] = pendingVault.map((v) => ({
+        id: uid(),
+        name: v.name,
+        mimeType: v.mimeType,
+        size: v.size,
+        kind: v.kind,
+        dataUrl: v.dataUrl,
+        extractedText: v.extractedText,
+        status: 'ready' as const,
+      }))
+      let attachments: Attachment[] = [...workspaceAttachments, ...vaultAttachments]
+      const usedVaultIds = new Set<string>(pendingVault.map((v) => v.id))
       if (files.length > 0) {
         setStreaming(true)
-        attachments = [
-          ...workspaceAttachments,
-          ...(await Promise.all(
-            files.map((f) => (hosted ? processFileHosted(f) : processFile(settings, f))),
-          )),
-        ]
+        const processed = await Promise.all(
+          files.map(async (f) => {
+            // Dedupe: a file already in the vault skips upload + extraction entirely.
+            const hash = await hashFile(f).catch(() => '')
+            const hit = hash ? await findVaultByHash(hash).catch(() => null) : null
+            if (hit && (hit.dataUrl || hit.extractedText)) {
+              usedVaultIds.add(hit.id)
+              return {
+                hash,
+                vaultId: hit.id,
+                attachment: {
+                  id: uid(),
+                  name: hit.name,
+                  mimeType: hit.mimeType,
+                  size: hit.size,
+                  kind: hit.kind,
+                  dataUrl: hit.dataUrl,
+                  extractedText: hit.extractedText,
+                  status: 'ready',
+                } as Attachment,
+              }
+            }
+            const attachment = hosted ? await processFileHosted(f) : await processFile(settings, f)
+            return { hash, vaultId: null as string | null, attachment }
+          }),
+        )
+        attachments = [...attachments, ...processed.map((p) => p.attachment)]
+        // Register new files in the vault (non-blocking).
+        for (const p of processed) {
+          if (!p.vaultId && p.hash && p.attachment.status === 'ready') {
+            const entry = vaultEntryFrom(p.hash, p.attachment)
+            usedVaultIds.add(entry.id)
+            putVaultFile(entry)
+              .then(refreshVault)
+              .catch(() => {})
+          }
+        }
         updateConversation(id, (c) => ({
           ...c,
           messages: c.messages.map((m) =>
@@ -712,6 +773,35 @@ export default function Home() {
         }
       }
 
+      // Record vault usage (non-blocking) and clear the composer picks.
+      if (usedVaultIds.size > 0) {
+        const useTitle = text.slice(0, 42) || attachments[0]?.name || 'Chat'
+        const useAt = Date.now()
+        setVault((prev) =>
+          prev.map((v) =>
+            usedVaultIds.has(v.id)
+              ? {
+                  ...v,
+                  usedIn: [
+                    ...v.usedIn.filter((u) => u.conversationId !== id),
+                    { conversationId: id, title: useTitle, at: useAt },
+                  ],
+                }
+              : v,
+          ),
+        )
+        // persist the usedIn update into IndexedDB on the next tick, once state settled
+        setTimeout(() => {
+          setVault((prev) => {
+            prev.forEach((v) => {
+              if (usedVaultIds.has(v.id)) putVaultFile(v).catch(() => {})
+            })
+            return prev
+          })
+        }, 50)
+      }
+      setPendingVault([])
+
       // NB: `conversations` is the pre-send snapshot — a conversation created
       // during this send() isn't in it yet, so fall back to a fresh descriptor.
       const existing = conversations.find((c) => c.id === id)
@@ -738,6 +828,8 @@ export default function Home() {
       desktop,
       hosted,
       user,
+      pendingVault,
+      refreshVault,
     ],
   )
 
@@ -967,6 +1059,8 @@ export default function Home() {
         usageSummary={usageSummary}
         briefsUnread={briefsUnreadQuery.data ?? 0}
         onLogout={logout}
+        vaultCount={vault.length}
+        onOpenVault={() => setVaultOpen(true)}
       />
 
       {view === 'briefs' ? (
@@ -1057,6 +1151,12 @@ export default function Home() {
                   ? { transcribe: (blob: Blob) => transcribeAudio(settings, blob, hosted) }
                   : null
               }
+              onOpenVault={() => setVaultOpen(true)}
+              vaultCount={vault.length}
+              pendingVault={pendingVault}
+              onRemovePendingVault={(id) =>
+                setPendingVault((prev) => prev.filter((v) => v.id !== id))
+              }
             />
           </div>
           {artifact && (
@@ -1085,6 +1185,28 @@ export default function Home() {
             setView('chat')
           }}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {vaultOpen && (
+        <VaultDialog
+          files={vault}
+          onAttach={
+            view === 'chat'
+              ? (f) => {
+                  setPendingVault((prev) =>
+                    prev.some((p) => p.id === f.id) ? prev : [...prev, f],
+                  )
+                  setVaultOpen(false)
+                }
+              : undefined
+          }
+          onDelete={(id) => {
+            deleteVaultFile(id).catch(() => {})
+            setVault((prev) => prev.filter((v) => v.id !== id))
+            setPendingVault((prev) => prev.filter((v) => v.id !== id))
+          }}
+          onClose={() => setVaultOpen(false)}
         />
       )}
 

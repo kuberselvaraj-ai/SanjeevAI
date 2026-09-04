@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
-import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic, Archive } from 'lucide-react'
 import { AUTO_ENTRY, KIMI_MODELS, PREMIUM_CHAT_MODELS, modelLabel, type KimiModel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
+import type { VaultFile } from '@/lib/types'
 
 export interface PendingFile {
   file: File
@@ -24,6 +25,10 @@ export function Composer({
   onToggleDeepResearch,
   voice,
   customModels,
+  onOpenVault,
+  vaultCount = 0,
+  pendingVault = [],
+  onRemovePendingVault,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -42,6 +47,12 @@ export function Composer({
   voice: { transcribe: (blob: Blob) => Promise<string> } | null
   /** Custom models (user-added in Settings, or server-provided on hosted) */
   customModels?: KimiModel[]
+  /** Mission Vault */
+  onOpenVault?: () => void
+  vaultCount?: number
+  /** vault files picked for this message */
+  pendingVault?: VaultFile[]
+  onRemovePendingVault?: (id: string) => void
 }) {
   const customList = customModels ?? []
   const [text, setText] = useState('')
@@ -147,7 +158,7 @@ export function Composer({
 
   const submit = () => {
     const value = text.trim()
-    if ((!value && files.length === 0) || streaming) return
+    if ((!value && files.length === 0 && pendingVault.length === 0) || streaming) return
     onSend(value, files.map((f) => f.file))
     setText('')
     setFiles([])
@@ -176,6 +187,33 @@ export function Composer({
             addFiles(e.dataTransfer?.files ?? null)
           }}
         >
+          {/* Vault picks */}
+          {pendingVault.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3.5 pt-3">
+              {pendingVault.map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center gap-2 rounded-lg border border-[hsl(188_86%_53%/0.4)] bg-[hsl(188_86%_53%/0.07)] px-2.5 py-1.5"
+                  title="From the Mission Vault — already processed, zero re-upload"
+                >
+                  <Archive size={14} className="shrink-0 text-[hsl(188_86%_63%)]" />
+                  <span className="max-w-[140px]">
+                    <span className="block truncate text-xs font-medium">{v.name}</span>
+                    <span className="block text-[10px] text-muted-foreground">
+                      vault · {formatSize(v.size)}
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => onRemovePendingVault?.(v.id)}
+                    className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-destructive"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Attachment chips */}
           {files.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3.5 pt-3">
@@ -244,6 +282,27 @@ export function Composer({
               >
                 <Paperclip size={16} />
               </button>
+
+              {/* Mission Vault */}
+              {onOpenVault && (
+                <button
+                  onClick={onOpenVault}
+                  disabled={disabled}
+                  className={`relative rounded-lg p-2 transition-colors disabled:opacity-40 ${
+                    pendingVault.length > 0
+                      ? 'bg-[hsl(188_86%_53%/0.12)] text-[hsl(188_86%_63%)]'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                  title="Mission Vault — your file library, reuse without re-uploading"
+                >
+                  <Archive size={16} />
+                  {vaultCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[hsl(188_86%_53%)] px-0.5 text-[8.5px] font-bold text-[hsl(222_47%_6%)]">
+                      {vaultCount}
+                    </span>
+                  )}
+                </button>
+              )}
 
               {/* Web search toggle */}
               <button
@@ -435,7 +494,7 @@ export function Composer({
             ) : (
               <button
                 onClick={submit}
-                disabled={(!text.trim() && files.length === 0 && !workspaceSummary) || disabled}
+                disabled={(!text.trim() && files.length === 0 && !workspaceSummary && pendingVault.length === 0) || disabled}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_18px_hsl(var(--primary)/0.45)] transition-all hover:opacity-90 hover:shadow-[0_0_26px_hsl(var(--primary)/0.6)] disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none"
                 title="Launch"
               >

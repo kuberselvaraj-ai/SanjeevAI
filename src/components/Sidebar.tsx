@@ -1,4 +1,4 @@
-import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost, CalendarClock } from 'lucide-react'
+import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost, CalendarClock, Archive } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import type { Conversation } from '@/lib/types'
@@ -33,6 +33,8 @@ export function Sidebar({
   usageSummary = null,
   briefsUnread = 0,
   onLogout,
+  vaultCount,
+  onOpenVault,
 }: {
   view: View
   onViewChange: (v: View) => void
@@ -55,6 +57,9 @@ export function Sidebar({
   /** unread scheduled-brief runs — red bubble on the Briefs tab */
   briefsUnread?: number
   onLogout?: () => void
+  /** Mission Vault entry point */
+  vaultCount?: number
+  onOpenVault?: () => void
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
@@ -119,14 +124,30 @@ export function Sidebar({
             <Plus size={16} strokeWidth={2.5} />
             New chat
           </button>
-          <button
-            onClick={onOpenSearch}
-            className="mt-2 flex w-full items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
-          >
-            <Search size={14} />
-            <span className="flex-1 text-left">Search chats</span>
-            <kbd className="rounded border border-sidebar-border px-1 py-0.5 text-[9.5px]">⌘K</kbd>
-          </button>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={onOpenSearch}
+              className="flex flex-1 items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <Search size={14} />
+              <span className="flex-1 text-left">Search chats</span>
+              <kbd className="rounded border border-sidebar-border px-1 py-0.5 text-[9.5px]">⌘K</kbd>
+            </button>
+            {onOpenVault && (
+              <button
+                onClick={onOpenVault}
+                className="relative flex items-center justify-center rounded-xl border border-sidebar-border bg-sidebar-accent/40 px-3 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+                title="Mission Vault — your file library"
+              >
+                <Archive size={15} />
+                {vaultCount !== undefined && vaultCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[hsl(188_86%_53%)] px-1 text-[9px] font-bold text-[hsl(222_47%_6%)]">
+                    {vaultCount}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* View switcher */}
