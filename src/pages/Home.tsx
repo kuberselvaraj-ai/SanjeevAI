@@ -422,7 +422,7 @@ export default function Home() {
           if (settings.anthropicKey) streamAnthropic(settings, councilMessages, councilCb, controller.signal)
           else streamOpenRouter(settings, councilModelId!, councilMessages, councilCb, controller.signal)
         } else {
-          if (settings.openaiKey) streamOpenAi(settings, councilMessages, councilCb, controller.signal)
+          if (settings.openaiKey) streamOpenAi(settings, councilMessages, councilCb, controller.signal, councilModelId!)
           else streamOpenRouter(settings, councilModelId!, councilMessages, councilCb, controller.signal)
         }
       }
@@ -515,7 +515,7 @@ export default function Home() {
         }
       } else if (resolved.startsWith('openai/')) {
         if (settings.openaiKey) {
-          streamOpenAi(settings, finalMessages, callbacks, controller.signal)
+          streamOpenAi(settings, finalMessages, callbacks, controller.signal, resolved)
         } else {
           streamOpenRouter(settings, resolved, finalMessages, callbacks, controller.signal)
         }

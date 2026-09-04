@@ -1,5 +1,5 @@
 /**
- * OpenAI direct — GPT-5.6 Sol via the first-party Chat Completions API.
+ * OpenAI direct — GPT-6 Astra / GPT-5.6 Sol via the first-party Chat Completions API.
  * Preferred when OPENAI_API_KEY is set (the same key also powers GPT Image 2
  * in the Image Studio); OpenRouter remains the fallback.
  *
@@ -17,8 +17,9 @@ export function openaiConfigured(): boolean {
 export async function openAiChatStream(payload: {
   messages: unknown[];
   temperature?: number;
+  model?: string;
 }): Promise<Response> {
-  const model = process.env.OPENAI_MODEL || "gpt-5.6-sol";
+  const model = process.env.OPENAI_MODEL || payload.model?.replace(/^openai\//, "") || "gpt-5.6-sol";
   const call = (withTemperature: boolean) =>
     fetch(`${ROOT}/chat/completions`, {
       method: "POST",

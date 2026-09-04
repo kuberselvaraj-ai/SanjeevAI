@@ -117,7 +117,7 @@ export function SettingsDialog({
               />
 
               <SecretField
-                label="OpenAI API key (GPT-5.6 chat + GPT Image 2)"
+                label="OpenAI API key (GPT-6 / GPT-5.6 chat + GPT Image 2)"
                 value={draft.openaiKey}
                 onChange={(v) => set('openaiKey', v)}
                 placeholder="sk-..."

@@ -122,7 +122,7 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       if (isClaude && anthropicConfigured())
         return { label: "Anthropic", call: anthropicChatStream({ messages: messages as never }) };
       if (isGpt && openaiConfigured())
-        return { label: "OpenAI", call: openAiChatStream({ messages, temperature }) };
+        return { label: "OpenAI", call: openAiChatStream({ messages, temperature, model }) };
       return { label: "OpenRouter", call: openRouterChatStream({ model, messages, temperature }) };
     };
     const chosen = premium ? premiumUpstream() : null;

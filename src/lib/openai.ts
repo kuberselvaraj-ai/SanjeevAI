@@ -7,14 +7,16 @@ import type { ApiMessage, StreamCallbacks } from './kimi'
  * single round, no tool loop. Reasoning-style models can reject an explicit
  * temperature, so we retry without it on a 400.
  */
-const OPENAI_MODEL = 'gpt-5.6-sol'
+const DEFAULT_OPENAI_MODEL = 'gpt-5.6-sol'
 
 export async function streamOpenAi(
   settings: Settings,
   messages: ApiMessage[],
   cb: StreamCallbacks,
   signal?: AbortSignal,
+  model?: string,
 ): Promise<void> {
+  const modelName = model?.replace(/^openai\//, '') || DEFAULT_OPENAI_MODEL
   try {
     const call = (withTemperature: boolean) =>
       fetch('https://api.openai.com/v1/chat/completions', {
@@ -24,7 +26,7 @@ export async function streamOpenAi(
           Authorization: `Bearer ${settings.openaiKey}`,
         },
         body: JSON.stringify({
-          model: OPENAI_MODEL,
+          model: modelName,
           messages,
           ...(withTemperature ? { temperature: settings.temperature } : {}),
           stream: true,

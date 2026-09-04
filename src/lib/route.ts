@@ -75,9 +75,9 @@ export function resolveChatModel(
       // Kimi K3 — SOTA on BrowseComp deep research, 1M-token context.
       return { model: 'kimi-k3', task, pinned: false }
     case 'math':
-      // GPT-5.6 Sol — strongest step-by-step reasoning.
+      // GPT-6 Astra — strongest math/science/agentic reasoning.
       return premium.gpt
-        ? { model: 'openai/gpt-5.6-sol', task, pinned: false }
+        ? { model: 'openai/gpt-6-astra', task, pinned: false }
         : { model: 'kimi-k3', task, pinned: true }
     case 'writing':
       // Claude Fable 5 — best writing quality.

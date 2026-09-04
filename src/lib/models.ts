@@ -44,7 +44,7 @@ export const KIMI_MODELS: KimiModel[] = [
  * Premium Western models. First-party keys (ANTHROPIC_API_KEY /
  * OPENAI_API_KEY) are preferred; OpenRouter covers whichever is missing.
  * The id doubles as the OpenRouter slug; first-party calls map it to
- * claude-fable-5 / gpt-5.6-sol (overridable via env on the server).
+ * claude-fable-5 / gpt-6-astra / gpt-5.6-sol (overridable via env on the server).
  */
 export const PREMIUM_CHAT_MODELS: KimiModel[] = [
   {
@@ -56,7 +56,13 @@ export const PREMIUM_CHAT_MODELS: KimiModel[] = [
   {
     id: 'openai/gpt-5.6-sol',
     label: 'GPT-5.6 Sol',
-    description: 'Best math & step-by-step reasoning',
+    description: 'General-purpose GPT · best value',
+    badge: 'Premium',
+  },
+  {
+    id: 'openai/gpt-6-astra',
+    label: 'GPT-6 Astra',
+    description: 'OpenAI flagship · best math, science & agentic work',
     badge: 'Premium',
   },
 ]
@@ -64,7 +70,7 @@ export const PREMIUM_CHAT_MODELS: KimiModel[] = [
 export const AUTO_ENTRY: KimiModel = {
   id: AUTO_MODEL,
   label: 'Auto · Best for the task',
-  description: 'Coding & research → Kimi K3 · writing → Claude · math → GPT',
+  description: 'Coding & research → Kimi K3 · writing → Claude · math → GPT-6',
   badge: 'Default',
 }
 
