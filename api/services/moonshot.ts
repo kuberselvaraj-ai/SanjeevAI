@@ -50,6 +50,45 @@ export async function openChatStream(payload: {
   return res;
 }
 
+/** Non-streaming chat completion — short structured jobs (deck design, briefs). */
+export async function chatComplete(payload: {
+  model: string;
+  messages: unknown[];
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<string> {
+  const call = (temperature: number) =>
+    fetch(`${BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${moonshotKey()}`,
+      },
+      body: JSON.stringify({
+        model: payload.model,
+        messages: payload.messages,
+        temperature,
+        max_tokens: payload.maxTokens ?? 900,
+        stream: false,
+      }),
+    });
+  let res = await call(payload.temperature ?? 0.4);
+  // Some models (e.g. kimi-k3) only accept temperature=1 — retry transparently.
+  if (res.status === 400) {
+    const errBody = await res.text().catch(() => "");
+    if (errBody.includes("invalid temperature")) res = await call(1);
+    else throw new Error(`Moonshot 400: ${errBody.slice(0, 300)}`);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Moonshot ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
 /** Upload a document to the Kimi Files API and return its extracted text. */
 export async function extractFileText(
   name: string,

@@ -3,7 +3,7 @@ import type { HttpBindings } from "@hono/node-server";
 import { PLANS } from "@contracts/constants";
 import { authenticateRequest } from "./kimi/auth";
 import { getMonthUsage, recordUsage } from "./queries/usage";
-import { extractFileText, moonshotKey, openChatStream } from "./services/moonshot";
+import { chatComplete, extractFileText, moonshotKey, openChatStream } from "./services/moonshot";
 import { dashscopeConfigured, qwenSpeak, qwenTranscribe } from "./services/dashscope";
 import { elevenlabsConfigured, elevenSpeak, elevenTranscribe } from "./services/elevenlabs";
 import {
@@ -79,6 +79,89 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       extraModels: parseExtraModels(process.env.EXTRA_MODELS),
     }),
   );
+
+  // ── Deck design — the AI arranges the executive's dashboard ───────────
+  // Given the user's memories, recent chats, connected accounts, and today's
+  // counts, the model picks and orders deck sections and writes a headline
+  // for each. Output is validated against a fixed catalog, so the model can
+  // arrange but never invent structure.
+  const DECK_SECTIONS = new Set([
+    "needs_response",
+    "needs_attention",
+    "in_motion",
+    "briefs",
+    "vault",
+  ]);
+  app.post("/api/hosted/deck-design", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    if (!moonshotKey()) {
+      return c.json({ error: "Chat is not configured on this server." }, 503);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      memories?: string[];
+      recentChats?: string[];
+      connections?: string[];
+      counts?: Record<string, number>;
+      hour?: number;
+    };
+    const context = {
+      memories: (body.memories ?? []).slice(0, 12),
+      recentChats: (body.recentChats ?? []).slice(0, 10),
+      connections: body.connections ?? [],
+      counts: body.counts ?? {},
+      localHour: body.hour ?? new Date().getHours(),
+    };
+    const raw = await chatComplete({
+      model: "kimi-k3",
+      temperature: 0.5,
+      // Reasoning models burn tokens on thinking before content — keep the
+      // budget generous so the JSON answer actually lands.
+      maxTokens: 3000,
+      messages: [
+        {
+          role: "system",
+          content: `You design the home dashboard of an executive AI console. Choose and order dashboard sections for THIS user, and write a short headline (3-6 words, plain sentence case) plus an optional one-line note for each. Section catalog (use only these ids): needs_response (messages and emails awaiting the user), needs_attention (decisions, meetings to prep, deals closing), in_motion (ongoing brainstorms and chats to continue), briefs (scheduled AI briefings), vault (recent files). Reply with ONLY JSON: {"sections":[{"id":"needs_response","headline":"…","note":"…"}]}. Pick 3-5 sections, most relevant first. Match the user's world (their memories, chat topics, connected apps) — an executive tone, never cute.`,
+        },
+        { role: "user", content: JSON.stringify(context) },
+      ],
+    }).catch(() => "");
+    // Lenient JSON extraction + strict catalog validation.
+    let sections: { id: string; headline: string; note?: string }[] = [];
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(match?.[0] ?? "") as {
+        sections?: { id?: string; headline?: string; note?: string }[];
+      };
+      const seen = new Set<string>();
+      for (const s of parsed.sections ?? []) {
+        if (!s.id || !DECK_SECTIONS.has(s.id) || seen.has(s.id)) continue;
+        seen.add(s.id);
+        sections.push({
+          id: s.id,
+          headline: String(s.headline ?? "").slice(0, 60) || s.id,
+          ...(s.note ? { note: String(s.note).slice(0, 120) } : {}),
+        });
+        if (sections.length >= 5) break;
+      }
+    } catch {
+      sections = [];
+    }
+    if (sections.length < 2) {
+      sections = [
+        { id: "needs_response", headline: "Needs your response" },
+        { id: "needs_attention", headline: "Needs attention" },
+        { id: "in_motion", headline: "In motion" },
+        { id: "briefs", headline: "Briefs" },
+        { id: "vault", headline: "From your vault" },
+      ];
+    }
+    return c.json({ ok: true, sections });
+  });
 
   // ── Streaming chat relay with per-user token metering ──────────────────
   app.post("/api/hosted/chat", async (c) => {

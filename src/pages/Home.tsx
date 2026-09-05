@@ -50,7 +50,7 @@ import { streamAnthropic } from '@/lib/anthropic'
 import { streamOpenAi } from '@/lib/openai'
 import { styleInstruction } from '@/lib/styles'
 import { RESEARCH_PROMPT } from '@/lib/research'
-import { memoryContext } from '@/lib/memory'
+import { loadMemories, memoryContext } from '@/lib/memory'
 import { estimateMessagesTokens, slimHistory } from '@/lib/contextBudget'
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
@@ -1324,6 +1324,13 @@ export default function Home() {
           userName={user?.name}
           connections={connections}
           vault={vault}
+          conversations={conversations
+            .slice()
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .slice(0, 8)
+            .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))}
+          briefsUnread={briefsUnreadQuery.data ?? 0}
+          memories={loadMemories()}
           onOpenVault={() => setVaultOpen(true)}
           onAsk={(p) => {
             setView('chat')
@@ -1331,6 +1338,11 @@ export default function Home() {
           }}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onContinueChat={(id) => {
+            setActiveId(id)
+            setView('chat')
+          }}
+          onOpenBriefs={() => setView('briefs')}
         />
       ) : view === 'briefs' ? (
         <BriefsView

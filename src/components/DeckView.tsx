@@ -3,24 +3,25 @@ import {
   Archive,
   Calendar,
   ChevronRight,
-  Cloud,
-  Database,
-  LayoutGrid,
   Link2,
   Loader2,
   Mail,
   Menu,
   MessageSquare,
+  Newspaper,
   RefreshCw,
-  Slack,
+  RotateCcw,
+  Sparkles,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { VaultFile } from '@/lib/types'
 import { formatSize } from '@/lib/files'
 
 /**
- * Mission Deck — the executive single screen. Every connected surface
- * (mail, calendar, Slack, Salesforce, vault) on one wall; any tile can
- * hand off to chat or voice for action.
+ * Mission Deck v3 — organized around what the executive must DO, not which
+ * app the data lives in. Sections are intent-centric (needs response, needs
+ * attention, in motion…) and their order + headlines are designed by the AI
+ * from the user's own world ("Design my deck").
  */
 
 interface DeckSections {
@@ -28,6 +29,34 @@ interface DeckSections {
   calendar?: { summary?: string; start?: string; end?: string; location?: string }[] | { error: string }
   slack?: { id?: string; name?: string; members?: number }[] | { error: string }
   salesforce?: { totalSize?: number; records?: Record<string, unknown>[] } | { error: string }
+}
+
+interface LayoutSection {
+  id: string
+  headline: string
+  note?: string
+}
+
+const LAYOUT_KEY = 'sanjeev:deck-layout'
+
+const DEFAULT_LAYOUT: LayoutSection[] = [
+  { id: 'needs_response', headline: 'Needs your response' },
+  { id: 'needs_attention', headline: 'Needs attention' },
+  { id: 'in_motion', headline: 'In motion' },
+  { id: 'briefs', headline: 'Briefs' },
+  { id: 'vault', headline: 'From your vault' },
+]
+
+function loadLayout(): LayoutSection[] {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (!raw) return DEFAULT_LAYOUT
+    const parsed = JSON.parse(raw) as LayoutSection[]
+    if (!Array.isArray(parsed) || parsed.length < 2) return DEFAULT_LAYOUT
+    return parsed
+  } catch {
+    return DEFAULT_LAYOUT
+  }
 }
 
 function isErr(v: unknown): v is { error: string } {
@@ -41,63 +70,113 @@ function greeting(): string {
   return 'Good evening'
 }
 
-function Tile({
+function timeAgo(ts: number): string {
+  const s = Math.max(1, Math.floor((Date.now() - ts) / 1000))
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+/** Small source chip so the executive always knows where an item came from. */
+function Source({ label, tone }: { label: string; tone: string }) {
+  return (
+    <span
+      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider ${tone}`}
+    >
+      {label}
+    </span>
+  )
+}
+
+function Section({
   icon: Icon,
-  title,
-  accent,
-  connected,
-  onConnect,
-  onAsk,
-  askLabel,
+  headline,
+  note,
+  count,
   children,
 }: {
   icon: typeof Mail
-  title: string
-  accent: string
-  connected: boolean
-  onConnect?: () => void
-  onAsk?: (prompt: string) => void
-  askLabel?: string
+  headline: string
+  note?: string
+  count?: number
   children: React.ReactNode
 }) {
   return (
-    <section className="flex min-h-44 flex-col overflow-hidden rounded-2xl border border-border bg-card/60">
-      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${accent}`}>
+    <section className="overflow-hidden rounded-2xl border border-border bg-card/60">
+      <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon size={14} />
         </span>
-        <h2 className="text-[13px] font-semibold tracking-wide">{title}</h2>
-        <span className="flex-1" />
-        {connected && onAsk && askLabel && (
-          <button
-            onClick={() => onAsk(askLabel)}
-            className="flex items-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
-            title="Continue in chat — the assistant can act on this"
-          >
-            Act on it
-            <ChevronRight size={12} />
-          </button>
+        <h2 className="text-[14px] font-semibold">{headline}</h2>
+        {count !== undefined && count > 0 && (
+          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+            {count}
+          </span>
+        )}
+        {note && (
+          <span className="hidden truncate text-[11.5px] text-muted-foreground sm:inline">
+            — {note}
+          </span>
         )}
       </header>
-      <div className="flex-1 overflow-y-auto p-3">
-        {!connected ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <Link2 size={16} className="text-muted-foreground/40" />
-            <p className="text-[11.5px] text-muted-foreground">Not connected</p>
-            {onConnect && (
-              <button
-                onClick={onConnect}
-                className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
-              >
-                Connect in Settings
-              </button>
-            )}
-          </div>
-        ) : (
-          children
-        )}
-      </div>
+      <div className="p-2.5">{children}</div>
     </section>
+  )
+}
+
+function ActionRow({
+  source,
+  title,
+  detail,
+  action,
+  onAction,
+  onOpen,
+}: {
+  source?: React.ReactNode
+  title: string
+  detail?: string
+  action?: string
+  onAction?: () => void
+  onOpen?: () => void
+}) {
+  return (
+    <div className="group flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors hover:bg-accent/50">
+      {source}
+      <button onClick={onOpen ?? onAction} className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[13px] font-medium">{title}</span>
+        {detail && (
+          <span className="block truncate text-[11.5px] text-muted-foreground">{detail}</span>
+        )}
+      </button>
+      {action && onAction && (
+        <button
+          onClick={onAction}
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 text-[11px] font-medium text-primary opacity-90 hover:bg-primary/20 sm:opacity-0 sm:group-hover:opacity-100"
+        >
+          {action}
+          <ChevronRight size={11} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function EmptyLine({ children }: { children: React.ReactNode }) {
+  return <p className="px-2.5 py-2 text-[12px] text-muted-foreground/70">{children}</p>
+}
+
+function ConnectLine({ provider, onOpenSettings }: { provider: string; onOpenSettings: () => void }) {
+  return (
+    <button
+      onClick={onOpenSettings}
+      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-left text-[12px] text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+    >
+      <Link2 size={13} className="shrink-0" />
+      Connect {provider} in Settings to light this up
+    </button>
   )
 }
 
@@ -106,22 +185,34 @@ export function DeckView({
   userName,
   connections,
   vault,
+  conversations,
+  briefsUnread,
+  memories,
   onOpenVault,
   onAsk,
   onOpenSettings,
   onOpenSidebar,
+  onContinueChat,
+  onOpenBriefs,
 }: {
   hosted: boolean
   userName?: string | null
   connections: { provider: string; label?: string | null }[]
   vault: VaultFile[]
+  conversations: { id: string; title: string; updatedAt: number }[]
+  briefsUnread: number
+  memories: string[]
   onOpenVault: () => void
   onAsk: (prompt: string) => void
   onOpenSettings: () => void
   onOpenSidebar: () => void
+  onContinueChat: (id: string) => void
+  onOpenBriefs: () => void
 }) {
   const [sections, setSections] = useState<DeckSections>({})
   const [loading, setLoading] = useState(false)
+  const [layout, setLayout] = useState<LayoutSection[]>(loadLayout)
+  const [designing, setDesigning] = useState(false)
 
   const has = (p: string) => connections.some((c) => c.provider === p)
 
@@ -140,51 +231,58 @@ export function DeckView({
   const calendar = sections.calendar
   const slack = sections.slack
   const sf = sections.salesforce
-  const recentVault = vault.slice(0, 6)
 
-  // Action points — what actually needs the executive, derived from the tiles.
-  const actions: { icon: typeof Mail; label: string; detail: string; prompt: string }[] = []
-  if (Array.isArray(gmail) && gmail.length > 0) {
-    actions.push({
-      icon: Mail,
-      label: `${gmail.length} unread email${gmail.length === 1 ? '' : 's'}`,
-      detail: gmail[0]?.subject ? `Latest: ${gmail[0].subject}` : 'Inbox needs a triage pass',
-      prompt:
-        'Summarize my unread email — sender, subject, and what each needs from me. Flag anything urgent.',
-    })
+  const unread = Array.isArray(gmail) ? gmail.length : 0
+  const events = Array.isArray(calendar) ? calendar.length : 0
+  const dealsClosingSoon =
+    sf && !isErr(sf) && Array.isArray(sf.records)
+      ? sf.records.filter((r) => {
+          const d = typeof r.CloseDate === 'string' ? new Date(r.CloseDate).getTime() : NaN
+          return Number.isFinite(d) && d - Date.now() < 7 * 86_400_000
+        })
+      : []
+  const dealsOpen = sf && !isErr(sf) && Array.isArray(sf.records) ? sf.records : []
+
+  const designMyDeck = async () => {
+    setDesigning(true)
+    try {
+      const res = await fetch('/api/hosted/deck-design', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memories,
+          recentChats: conversations.map((c) => c.title).filter(Boolean),
+          connections: connections.map((c) => c.provider),
+          counts: {
+            unreadEmail: unread,
+            upcomingEvents: events,
+            openDeals: dealsOpen.length,
+            dealsClosingSoon: dealsClosingSoon.length,
+            vaultFiles: vault.length,
+            unreadBriefs: briefsUnread,
+          },
+          hour: new Date().getHours(),
+        }),
+      })
+      const j = (await res.json().catch(() => ({}))) as {
+        sections?: LayoutSection[]
+        error?: string
+      }
+      if (!res.ok || !j.sections) throw new Error(j.error ?? `failed (${res.status})`)
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(j.sections))
+      setLayout(j.sections)
+      toast.success('Deck redesigned around your world.')
+    } catch (e) {
+      toast.error(`Could not design the deck: ${(e as Error).message}`)
+    } finally {
+      setDesigning(false)
+    }
   }
-  if (Array.isArray(calendar) && calendar.length > 0) {
-    const next = calendar[0]
-    const when = next?.start
-      ? new Date(next.start).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-      : ''
-    actions.push({
-      icon: Calendar,
-      label: `Next meeting${when ? ` at ${when}` : ''}`,
-      detail: next?.summary ?? 'Coming up',
-      prompt: `Prep me for my next meeting${next?.summary ? ` ("${next.summary}")` : ''} — context, talking points, and any related email.`,
-    })
-  }
-  if (sf && !isErr(sf) && Array.isArray(sf.records) && sf.records.length > 0) {
-    const soon = sf.records.filter((r) => {
-      const d = typeof r.CloseDate === 'string' ? new Date(r.CloseDate).getTime() : NaN
-      return Number.isFinite(d) && d - Date.now() < 7 * 86_400_000
-    })
-    actions.push({
-      icon: Database,
-      label: soon.length > 0 ? `${soon.length} deal${soon.length === 1 ? '' : 's'} closing this week` : 'Pipeline review',
-      detail: soon[0] ? String(soon[0].Name ?? '') : `${sf.records.length} open opportunities`,
-      prompt:
-        'Review my open Salesforce opportunities — which deals close this week, and what should I do on each?',
-    })
-  }
-  if (has('slack')) {
-    actions.push({
-      icon: Slack,
-      label: 'Slack catch-up',
-      detail: 'Scan channels for anything awaiting you',
-      prompt: 'Catch me up on my Slack channels — anything that needs a reply or a decision?',
-    })
+
+  const resetLayout = () => {
+    localStorage.removeItem(LAYOUT_KEY)
+    setLayout(DEFAULT_LAYOUT)
   }
 
   const today = new Date().toLocaleDateString(undefined, {
@@ -193,293 +291,243 @@ export function DeckView({
     day: 'numeric',
   })
 
+  const renderSection = (s: LayoutSection) => {
+    switch (s.id) {
+      case 'needs_response':
+        return (
+          <Section key={s.id} icon={Mail} headline={s.headline} note={s.note} count={unread}>
+            {loading && !gmail ? (
+              <EmptyLine>Checking your inbox…</EmptyLine>
+            ) : Array.isArray(gmail) && gmail.length > 0 ? (
+              gmail.slice(0, 5).map((m, i) => (
+                <ActionRow
+                  key={i}
+                  source={<Source label="Gmail" tone="bg-orange-500/10 text-orange-400" />}
+                  title={m.subject || '(no subject)'}
+                  detail={`${m.from ?? ''}${m.snippet ? ` — ${m.snippet.slice(0, 60)}` : ''}`}
+                  action="Draft reply"
+                  onAction={() =>
+                    onAsk(
+                      `Draft a reply to the email from ${m.from ?? 'unknown'} with subject "${m.subject ?? ''}". Show me the draft first.`,
+                    )
+                  }
+                />
+              ))
+            ) : has('google') ? (
+              <EmptyLine>Nothing waiting on you — inbox is clear.</EmptyLine>
+            ) : (
+              <ConnectLine provider="Google" onOpenSettings={onOpenSettings} />
+            )}
+            {has('slack') && (
+              <ActionRow
+                source={<Source label="Slack" tone="bg-emerald-500/10 text-emerald-400" />}
+                title="Scan Slack for anything awaiting you"
+                detail={
+                  Array.isArray(slack) ? `${slack.length} channels in your workspace` : undefined
+                }
+                action="Catch up"
+                onAction={() =>
+                  onAsk('Catch me up on my Slack channels — anything that needs a reply or a decision?')
+                }
+              />
+            )}
+            {unread > 0 && (
+              <ActionRow
+                title="Triage everything at once"
+                detail="Summarize all unread mail, ranked by urgency"
+                action="Summarize"
+                onAction={() =>
+                  onAsk(
+                    'Summarize my unread email — sender, subject, and what each needs from me. Flag anything urgent.',
+                  )
+                }
+              />
+            )}
+          </Section>
+        )
+
+      case 'needs_attention':
+        return (
+          <Section
+            key={s.id}
+            icon={Calendar}
+            headline={s.headline}
+            note={s.note}
+            count={dealsClosingSoon.length + (events > 0 ? 1 : 0)}
+          >
+            {Array.isArray(calendar) && calendar.length > 0 ? (
+              calendar.slice(0, 3).map((ev, i) => (
+                <ActionRow
+                  key={i}
+                  source={<Source label="Cal" tone="bg-cyan-500/10 text-cyan-400" />}
+                  title={ev.summary ?? 'Event'}
+                  detail={
+                    ev.start
+                      ? new Date(ev.start).toLocaleString(undefined, {
+                          weekday: 'short',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })
+                      : undefined
+                  }
+                  action="Prep me"
+                  onAction={() =>
+                    onAsk(
+                      `Prep me for "${ev.summary ?? 'my next meeting'}" — context, talking points, and any related email.`,
+                    )
+                  }
+                />
+              ))
+            ) : has('google') ? (
+              <EmptyLine>No meetings on the horizon.</EmptyLine>
+            ) : (
+              <ConnectLine provider="Google Calendar" onOpenSettings={onOpenSettings} />
+            )}
+            {has('salesforce') ? (
+              dealsClosingSoon.length > 0 ? (
+                dealsClosingSoon.slice(0, 3).map((r, i) => (
+                  <ActionRow
+                    key={`sf-${i}`}
+                    source={<Source label="Deal" tone="bg-sky-500/10 text-sky-400" />}
+                    title={String(r.Name ?? 'Opportunity')}
+                    detail={`${String(r.StageName ?? '')} · closes ${String(r.CloseDate ?? '')}${
+                      typeof r.Amount === 'number' ? ` · $${Math.round(r.Amount).toLocaleString()}` : ''
+                    }`}
+                    action="Review"
+                    onAction={() =>
+                      onAsk(
+                        `Review the Salesforce opportunity "${String(r.Name ?? '')}" — what will it take to close, and what should I do this week?`,
+                      )
+                    }
+                  />
+                ))
+              ) : (
+                <EmptyLine>No deals closing this week.</EmptyLine>
+              )
+            ) : (
+              <ConnectLine provider="Salesforce" onOpenSettings={onOpenSettings} />
+            )}
+          </Section>
+        )
+
+      case 'in_motion':
+        return (
+          <Section
+            key={s.id}
+            icon={MessageSquare}
+            headline={s.headline}
+            note={s.note}
+            count={conversations.length}
+          >
+            {conversations.length > 0 ? (
+              conversations.slice(0, 4).map((c) => (
+                <ActionRow
+                  key={c.id}
+                  source={<Source label="Chat" tone="bg-primary/10 text-primary" />}
+                  title={c.title || 'Untitled conversation'}
+                  detail={`last active ${timeAgo(c.updatedAt)}`}
+                  action="Continue"
+                  onAction={() => onContinueChat(c.id)}
+                />
+              ))
+            ) : (
+              <EmptyLine>
+                No threads in flight — start one from the box below and it shows up here.
+              </EmptyLine>
+            )}
+          </Section>
+        )
+
+      case 'briefs':
+        return (
+          <Section key={s.id} icon={Newspaper} headline={s.headline} note={s.note} count={briefsUnread}>
+            {briefsUnread > 0 ? (
+              <ActionRow
+                source={<Source label="Brief" tone="bg-amber-500/10 text-amber-400" />}
+                title={`${briefsUnread} unread briefing${briefsUnread === 1 ? '' : 's'}`}
+                detail="Scheduled research landed while you were away"
+                action="Read now"
+                onAction={onOpenBriefs}
+              />
+            ) : (
+              <EmptyLine>
+                No unread briefs. Schedule one in Briefs — the AI works while you sleep.
+              </EmptyLine>
+            )}
+          </Section>
+        )
+
+      case 'vault':
+        return (
+          <Section key={s.id} icon={Archive} headline={s.headline} note={s.note} count={vault.length}>
+            {vault.length > 0 ? (
+              vault.slice(0, 4).map((f) => (
+                <ActionRow
+                  key={f.id}
+                  source={<Source label="File" tone="bg-amber-500/10 text-amber-400" />}
+                  title={f.name}
+                  detail={`${formatSize(f.size)} · ${f.tags.slice(0, 2).join(' · ')}`}
+                  action="Open vault"
+                  onAction={onOpenVault}
+                />
+              ))
+            ) : (
+              <EmptyLine>
+                Vault is empty — drop files into any chat or upload straight into the vault.
+              </EmptyLine>
+            )}
+          </Section>
+        )
+
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-4 pb-6 pt-5 md:px-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onOpenSidebar}
-            className="rounded-lg p-2 text-muted-foreground hover:bg-accent md:hidden"
-          >
-            <Menu size={18} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="font-display text-xl font-semibold md:text-2xl">
-              {greeting()}
-              {userName ? `, ${userName.split(' ')[0]}` : ''}.
-            </h1>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
-              {today} — your operations on one screen.
-            </p>
-          </div>
-          <button
-            onClick={refresh}
-            className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-            title="Refresh all tiles"
-          >
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-          </button>
-        </div>
-
-        {/* Action points — what needs the executive right now */}
-        {actions.length > 0 ? (
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {actions.map((a) => (
-              <button
-                key={a.label}
-                onClick={() => onAsk(a.prompt)}
-                className="group flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/[0.06] px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary/10"
-              >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <a.icon size={16} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold">{a.label}</span>
-                  <span className="block truncate text-[11.5px] text-muted-foreground">
-                    {a.detail}
-                  </span>
-                </span>
-                <ChevronRight
-                  size={15}
-                  className="shrink-0 text-primary/50 transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
-                />
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              'Summarize my unread email',
-              "What's on my calendar today?",
-              'Review my sales pipeline',
-              'Catch me up on Slack',
-            ].map((p) => (
-              <button
-                key={p}
-                onClick={() => onAsk(p)}
-                className="rounded-full border border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Tile
-            icon={Mail}
-            title="Inbox"
-            accent="bg-orange-500/10 text-orange-400"
-            connected={has('google')}
-            onConnect={onOpenSettings}
-            onAsk={onAsk}
-            askLabel="Summarize my unread email — sender, subject, and what each needs from me."
-          >
-            {loading && !gmail ? (
-              <TileLoading />
-            ) : isErr(gmail) ? (
-              <TileError msg={gmail.error} />
-            ) : Array.isArray(gmail) && gmail.length > 0 ? (
-              <ul className="space-y-2">
-                {gmail.map((m, i) => (
-                  <li key={i} className="rounded-xl border border-border/60 bg-background/40 px-3 py-2">
-                    <p className="truncate text-[12.5px] font-medium">{m.subject || '(no subject)'}</p>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {m.from} · {m.snippet?.slice(0, 80)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <TileEmpty msg="Inbox zero. Nothing unread." />
-            )}
-          </Tile>
-
-          <Tile
-            icon={Calendar}
-            title="Schedule"
-            accent="bg-cyan-500/10 text-cyan-400"
-            connected={has('google')}
-            onConnect={onOpenSettings}
-            onAsk={onAsk}
-            askLabel="Walk me through my schedule for today and tomorrow — what needs preparation?"
-          >
-            {loading && !calendar ? (
-              <TileLoading />
-            ) : isErr(calendar) ? (
-              <TileError msg={calendar.error} />
-            ) : Array.isArray(calendar) && calendar.length > 0 ? (
-              <ul className="space-y-2">
-                {calendar.map((ev, i) => (
-                  <li key={i} className="flex items-baseline gap-3 rounded-xl border border-border/60 bg-background/40 px-3 py-2">
-                    <span className="shrink-0 font-mono-code text-[10.5px] text-cyan-400">
-                      {ev.start
-                        ? new Date(ev.start).toLocaleTimeString(undefined, {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })
-                        : '—'}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[12.5px] font-medium">{ev.summary}</span>
-                      {ev.location && (
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {ev.location}
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <TileEmpty msg="Clear runway — no events in the next two days." />
-            )}
-          </Tile>
-
-          <Tile
-            icon={Slack}
-            title="Slack"
-            accent="bg-emerald-500/10 text-emerald-400"
-            connected={has('slack')}
-            onConnect={onOpenSettings}
-            onAsk={onAsk}
-            askLabel="Catch me up on my Slack channels — anything that needs a reply?"
-          >
-            {loading && !slack ? (
-              <TileLoading />
-            ) : isErr(slack) ? (
-              <TileError msg={slack.error} />
-            ) : Array.isArray(slack) && slack.length > 0 ? (
-              <ul className="flex flex-wrap gap-1.5">
-                {slack.slice(0, 14).map((ch) => (
-                  <li
-                    key={ch.id}
-                    className="rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5 text-[11.5px] text-muted-foreground"
-                  >
-                    <span className="text-foreground">#{ch.name}</span>
-                    {typeof ch.members === 'number' && (
-                      <span className="ml-1.5 text-[10px]">{ch.members}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <TileEmpty msg="No channels found." />
-            )}
-          </Tile>
-
-          <Tile
-            icon={Database}
-            title="Pipeline — Salesforce"
-            accent="bg-sky-500/10 text-sky-400"
-            connected={has('salesforce')}
-            onConnect={onOpenSettings}
-            onAsk={onAsk}
-            askLabel="Review my open Salesforce opportunities — which deals need attention this week?"
-          >
-            {loading && !sf ? (
-              <TileLoading />
-            ) : isErr(sf) ? (
-              <TileError msg={sf.error} />
-            ) : sf && Array.isArray(sf.records) && sf.records.length > 0 ? (
-              <ul className="space-y-1.5">
-                <li className="px-1 text-[10.5px] uppercase tracking-wider text-muted-foreground">
-                  {sf.totalSize} open opportunities
-                </li>
-                {sf.records.slice(0, 6).map((r, i) => (
-                  <li
-                    key={i}
-                    className="flex items-center gap-2 rounded-xl border border-border/60 bg-background/40 px-3 py-2"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] font-medium">
-                        {String(r.Name ?? '—')}
-                      </span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {String(r.StageName ?? '')}
-                        {r.CloseDate ? ` · closes ${String(r.CloseDate)}` : ''}
-                      </span>
-                    </span>
-                    {typeof r.Amount === 'number' && (
-                      <span className="shrink-0 font-mono-code text-[11.5px] text-sky-400">
-                        ${Math.round(r.Amount).toLocaleString()}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <TileEmpty msg="No open opportunities." />
-            )}
-          </Tile>
-
-          <Tile
-            icon={Archive}
-            title="Mission Vault"
-            accent="bg-amber-500/10 text-amber-400"
-            connected={true}
-            onAsk={onAsk}
-            askLabel="What's in my vault? Summarize my most recent files."
-          >
-            {recentVault.length > 0 ? (
-              <ul className="space-y-1.5">
-                {recentVault.map((f) => (
-                  <li
-                    key={f.id}
-                    className="flex items-center gap-2 rounded-xl border border-border/60 bg-background/40 px-3 py-2"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] font-medium">{f.name}</span>
-                      <span className="block text-[10.5px] text-muted-foreground">
-                        {formatSize(f.size)} · {f.tags.slice(0, 3).join(' · ')}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <TileEmpty msg="Vault is empty — upload from any chat or the vault dialog." />
-            )}
+        <div className="mx-auto w-full max-w-4xl px-4 pb-6 pt-5 md:px-6">
+          <div className="flex items-center gap-3">
             <button
-              onClick={onOpenVault}
-              className="mt-2 w-full rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              onClick={onOpenSidebar}
+              className="rounded-lg p-2 text-muted-foreground hover:bg-accent md:hidden"
             >
-              Open vault
+              <Menu size={18} />
             </button>
-          </Tile>
-
-          <Tile
-            icon={Cloud}
-            title="Talk to Sanjeev"
-            accent="bg-primary/10 text-primary"
-            connected={true}
-            onAsk={onAsk}
-            askLabel="Give me my morning briefing: unread email, today's schedule, and anything urgent."
-          >
-            <p className="px-1 text-[12px] leading-5 text-muted-foreground">
-              Everything on this deck is voice-ready. Open voice mode in chat and say what you
-              need — <span className="text-foreground">“open my email”</span>,{' '}
-              <span className="text-foreground">“draft a reply to the board”</span>,{' '}
-              <span className="text-foreground">“move the Acme deal to Closed Won”</span> — and it
-              happens here, with your approval before anything goes out.
-            </p>
-            <div className="mt-2 flex items-center gap-1.5 px-1 text-[10.5px] text-muted-foreground/70">
-              <LayoutGrid size={11} />
-              {connections.length === 0
-                ? 'Connect Google, Slack, or Salesforce in Settings to light up the deck.'
-                : `${connections.length} account${connections.length === 1 ? '' : 's'} connected.`}
+            <div className="min-w-0 flex-1">
+              <h1 className="font-display text-xl font-semibold md:text-2xl">
+                {greeting()}
+                {userName ? `, ${userName.split(' ')[0]}` : ''}.
+              </h1>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">{today}</p>
             </div>
-            {connections.length === 0 && (
-              <button
-                onClick={onOpenSettings}
-                className="mt-2 w-full rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:opacity-90"
-              >
-                Connect an account
-              </button>
-            )}
-          </Tile>
-        </div>
+            <button
+              onClick={resetLayout}
+              className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Reset to the default layout"
+            >
+              <RotateCcw size={14} />
+            </button>
+            <button
+              onClick={designMyDeck}
+              disabled={designing}
+              className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-[12px] font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+              title="Let the AI arrange this deck around your world"
+            >
+              {designing ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              Design my deck
+            </button>
+            <button
+              onClick={refresh}
+              className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Refresh all sections"
+            >
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4">{layout.map(renderSection)}</div>
         </div>
       </div>
 
@@ -499,7 +547,7 @@ function DeckComposer({ onAsk }: { onAsk: (prompt: string) => void }) {
   }
   return (
     <div className="border-t border-border bg-background/80 backdrop-blur">
-      <div className="mx-auto w-full max-w-5xl px-4 py-3 md:px-6">
+      <div className="mx-auto w-full max-w-4xl px-4 py-3 md:px-6">
         <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-lg focus-within:border-primary/50">
           <textarea
             value={text}
@@ -529,26 +577,4 @@ function DeckComposer({ onAsk }: { onAsk: (prompt: string) => void }) {
       </div>
     </div>
   )
-}
-
-function TileLoading() {
-  return (
-    <div className="flex h-full items-center justify-center gap-2 text-[11.5px] text-muted-foreground">
-      <Loader2 size={13} className="animate-spin" />
-      Loading…
-    </div>
-  )
-}
-
-function TileError({ msg }: { msg: string }) {
-  return (
-    <p className="px-1 py-2 text-[11.5px] leading-4 text-muted-foreground">
-      <MessageSquare size={11} className="mr-1 inline" />
-      {msg}
-    </p>
-  )
-}
-
-function TileEmpty({ msg }: { msg: string }) {
-  return <p className="px-1 py-2 text-[11.5px] text-muted-foreground/70">{msg}</p>
 }
