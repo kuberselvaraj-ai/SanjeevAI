@@ -1,10 +1,10 @@
-import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost, CalendarClock, Archive } from 'lucide-react'
+import { MessageSquare, Plus, Settings, Trash2, Clapperboard, ImageIcon, Moon, Sun, X, LogOut, ShieldCheck, Search, Pin, PinOff, Pencil, Ghost, CalendarClock, Archive, LayoutGrid } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import type { Conversation } from '@/lib/types'
 import { modelLabel } from '@/lib/models'
 
-export type View = 'chat' | 'video' | 'image' | 'briefs'
+export type View = 'deck' | 'chat' | 'video' | 'image' | 'briefs'
 
 export interface SidebarUser {
   name?: string | null
@@ -154,6 +154,7 @@ export function Sidebar({
         <div className="mx-4 mt-4 flex rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-1">
           {(
             [
+              ...(hosted ? [{ id: 'deck', label: 'Deck', icon: LayoutGrid } as const] : []),
               { id: 'chat', label: 'Chat', icon: MessageSquare },
               ...(hosted ? [{ id: 'briefs', label: 'Briefs', icon: CalendarClock } as const] : []),
               { id: 'image', label: 'Images', icon: ImageIcon },

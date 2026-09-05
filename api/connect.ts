@@ -238,6 +238,215 @@ async function calendarUpcoming(userId: number, args: { days?: number; max?: num
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 
+/* ---------------- Slack ---------------- */
+
+const SLACK_SCOPES = [
+  "channels:read",
+  "channels:history",
+  "groups:read",
+  "groups:history",
+  "chat:write",
+  "users:read",
+].join(",");
+
+function slackConfigured(): boolean {
+  return Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET);
+}
+
+async function loadConnection(userId: number, provider: string) {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.connections)
+    .where(and(eq(schema.connections.userId, userId), eq(schema.connections.provider, provider)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    accessToken: decryptToken(row.accessTokenEnc),
+    refreshToken: row.refreshTokenEnc ? decryptToken(row.refreshTokenEnc) : null,
+    expiresAt: row.expiresAt ?? null,
+    instanceUrl: row.instanceUrl ?? null,
+  };
+}
+
+async function slackApi(
+  userId: number,
+  method: string,
+  params: Record<string, string>,
+  asPost = false,
+): Promise<Record<string, unknown>> {
+  const conn = await loadConnection(userId, "slack");
+  if (!conn) throw new Error("Slack is not connected. Connect it in Settings → Connections.");
+  const url = `https://slack.com/api/${method}${asPost ? "" : `?${new URLSearchParams(params)}`}`;
+  const res = await fetch(url, {
+    method: asPost ? "POST" : "GET",
+    headers: {
+      Authorization: `Bearer ${conn.accessToken}`,
+      ...(asPost ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(asPost ? { body: JSON.stringify(params) } : {}),
+  });
+  const data = (await res.json()) as { ok?: boolean; error?: string } & Record<string, unknown>;
+  if (!res.ok || !data.ok) throw new Error(`Slack ${method} failed: ${data.error ?? res.status}`);
+  return data;
+}
+
+async function slackChannels(userId: number) {
+  const data = await slackApi(userId, "conversations.list", {
+    types: "public_channel,private_channel",
+    limit: "50",
+    exclude_archived: "true",
+  });
+  return ((data.channels as Record<string, unknown>[]) ?? []).map((ch) => ({
+    id: ch.id,
+    name: ch.name,
+    members: ch.num_members,
+  }));
+}
+
+async function slackRead(userId: number, args: { channel: string; limit?: number }) {
+  const data = await slackApi(userId, "conversations.history", {
+    channel: args.channel,
+    limit: String(Math.min(args.limit ?? 15, 50)),
+  });
+  const messages = (data.messages as { user?: string; text?: string; ts?: string }[]) ?? [];
+  // Resolve user ids to display names (best effort).
+  const names = new Map<string, string>();
+  try {
+    const users = await slackApi(userId, "users.list", { limit: "200" });
+    for (const u of (users.members as { id: string; real_name?: string; name?: string }[]) ?? [])
+      names.set(u.id, u.real_name ?? u.name ?? u.id);
+  } catch {
+    /* names stay as ids */
+  }
+  return messages.map((m) => ({
+    from: (m.user && names.get(m.user)) || m.user || "unknown",
+    text: (m.text ?? "").slice(0, 500),
+    ts: m.ts,
+  }));
+}
+
+async function slackSend(userId: number, args: { channel: string; text: string; confirm?: boolean }) {
+  if (args.confirm !== true) {
+    throw new Error(
+      "Message not sent — Slack posts need explicit confirmation. Show the user the channel and text, then call slack_send again with confirm=true only after they approve.",
+    );
+  }
+  const data = await slackApi(userId, "chat.postMessage", {
+    channel: args.channel,
+    text: args.text,
+  }, true);
+  return { sent: true, ts: data.ts };
+}
+
+/* ---------------- Salesforce ---------------- */
+
+const SF_LOGIN = () => process.env.SALESFORCE_LOGIN_HOST || "https://login.salesforce.com";
+const SF_SCOPES = "api refresh_token openid";
+
+function salesforceConfigured(): boolean {
+  return Boolean(process.env.SALESFORCE_CLIENT_ID && process.env.SALESFORCE_CLIENT_SECRET);
+}
+
+async function sfRefresh(userId: number, conn: NonNullable<Awaited<ReturnType<typeof loadConnection>>>) {
+  if (!conn.refreshToken) throw new Error("Salesforce session expired — reconnect in Settings.");
+  const res = await fetch(`${SF_LOGIN()}/services/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.SALESFORCE_CLIENT_ID!,
+      client_secret: process.env.SALESFORCE_CLIENT_SECRET!,
+      refresh_token: conn.refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    access_token?: string;
+    instance_url?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.access_token) {
+    throw new Error(`Salesforce token refresh failed (${data.error ?? res.status}) — reconnect in Settings.`);
+  }
+  conn.accessToken = data.access_token;
+  if (data.instance_url) conn.instanceUrl = data.instance_url;
+  await getDb()
+    .update(schema.connections)
+    .set({
+      accessTokenEnc: encryptToken(conn.accessToken),
+      ...(data.instance_url ? { instanceUrl: data.instance_url } : {}),
+    })
+    .where(eq(schema.connections.id, conn.id));
+}
+
+async function sfApi(
+  userId: number,
+  path: string,
+  init?: { method?: string; body?: unknown },
+  retried = false,
+): Promise<Record<string, unknown>> {
+  const conn = await loadConnection(userId, "salesforce");
+  if (!conn) throw new Error("Salesforce is not connected. Connect it in Settings → Connections.");
+  if (!conn.instanceUrl) throw new Error("Salesforce instance URL missing — reconnect in Settings.");
+  const res = await fetch(`${conn.instanceUrl}${path}`, {
+    method: init?.method ?? "GET",
+    headers: {
+      Authorization: `Bearer ${conn.accessToken}`,
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(init?.body ? { body: JSON.stringify(init.body) } : {}),
+  });
+  if (res.status === 401 && !retried) {
+    await sfRefresh(userId, conn);
+    return sfApi(userId, path, init, true);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Salesforce API error ${res.status}: ${text.slice(0, 300)}`);
+  }
+  if (res.status === 204) return {};
+  return (await res.json()) as Record<string, unknown>;
+}
+
+async function sfQuery(userId: number, soql: string) {
+  if (!/^\s*select\s/i.test(soql)) throw new Error("Only SELECT (SOQL) queries are allowed.");
+  const data = await sfApi(userId, `/services/data/v61.0/query?q=${encodeURIComponent(soql)}`);
+  const records = (data.records as Record<string, unknown>[]) ?? [];
+  return {
+    totalSize: data.totalSize ?? records.length,
+    records: records.slice(0, 50).map((r) => {
+      const { attributes, ...rest } = r;
+      return rest;
+    }),
+  };
+}
+
+async function sfOpportunities(userId: number) {
+  return sfQuery(
+    userId,
+    "SELECT Id, Name, StageName, Amount, CloseDate, Account.Name FROM Opportunity WHERE IsClosed = false ORDER BY CloseDate ASC LIMIT 20",
+  );
+}
+
+async function sfUpdate(
+  userId: number,
+  args: { objectType: string; id: string; fields: Record<string, unknown>; confirm?: boolean },
+) {
+  if (args.confirm !== true) {
+    throw new Error(
+      "Record not updated — Salesforce writes need explicit confirmation. Show the user the object, id and field changes, then call salesforce_update again with confirm=true only after they approve.",
+    );
+  }
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(args.objectType)) throw new Error("Invalid object type.");
+  await sfApi(userId, `/services/data/v61.0/sobjects/${args.objectType}/${args.id}`, {
+    method: "PATCH",
+    body: args.fields ?? {},
+  });
+  return { updated: true, objectType: args.objectType, id: args.id };
+}
+
 export function registerConnectRoutes(app: Hono<{ Bindings: HttpBindings }>) {
   // Start OAuth — redirect to Google consent.
   app.get("/api/connect/google/start", async (c) => {
@@ -345,6 +554,233 @@ export function registerConnectRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     }
   });
 
+  /* ---------------- Slack OAuth ---------------- */
+
+  app.get("/api/connect/slack/start", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    if (!slackConfigured()) {
+      return c.json({ error: "Slack connector is not configured on this server." }, 503);
+    }
+    const origin = new URL(c.req.url).origin;
+    const state = encryptToken(JSON.stringify({ u: user.unionId, t: Date.now() }));
+    const params = new URLSearchParams({
+      client_id: process.env.SLACK_CLIENT_ID!,
+      redirect_uri: `${origin}/api/connect/slack/callback`,
+      user_scope: SLACK_SCOPES,
+      state,
+    });
+    return c.redirect(`https://slack.com/oauth/v2/authorize?${params}`);
+  });
+
+  app.get("/api/connect/slack/callback", async (c) => {
+    const url = new URL(c.req.url);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state") ?? "";
+    const origin = url.origin;
+    if (!code || !slackConfigured()) return c.redirect(`${origin}/#/?connect=error`);
+    let unionId: string;
+    try {
+      const parsed = JSON.parse(decryptToken(state)) as { u: string; t: number };
+      if (Date.now() - parsed.t > 10 * 60_000) throw new Error("stale state");
+      unionId = parsed.u;
+    } catch {
+      return c.redirect(`${origin}/#/?connect=error`);
+    }
+    try {
+      const tokenRes = await fetch("https://slack.com/api/oauth.v2.access", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: process.env.SLACK_CLIENT_ID!,
+          client_secret: process.env.SLACK_CLIENT_SECRET!,
+          redirect_uri: `${origin}/api/connect/slack/callback`,
+        }),
+      });
+      const data = (await tokenRes.json()) as {
+        ok?: boolean;
+        authed_user?: { access_token?: string };
+        team?: { name?: string };
+      };
+      const accessToken = data.authed_user?.access_token;
+      if (!data.ok || !accessToken) throw new Error("slack token exchange failed");
+
+      const db = getDb();
+      const userRows = await db.select().from(schema.users).where(eq(schema.users.unionId, unionId)).limit(1);
+      const user = userRows[0];
+      if (!user) throw new Error("user not found");
+      const existing = await db
+        .select()
+        .from(schema.connections)
+        .where(and(eq(schema.connections.userId, user.id), eq(schema.connections.provider, "slack")))
+        .limit(1);
+      const values = {
+        label: data.team?.name ?? "Slack workspace",
+        scopes: SLACK_SCOPES,
+        accessTokenEnc: encryptToken(accessToken),
+      };
+      if (existing[0]) {
+        await db.update(schema.connections).set(values).where(eq(schema.connections.id, existing[0].id));
+      } else {
+        await db.insert(schema.connections).values({ userId: user.id, provider: "slack", ...values });
+      }
+      return c.redirect(`${origin}/#/?connect=slack`);
+    } catch {
+      return c.redirect(`${origin}/#/?connect=error`);
+    }
+  });
+
+  /* ---------------- Salesforce OAuth ---------------- */
+
+  app.get("/api/connect/salesforce/start", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    if (!salesforceConfigured()) {
+      return c.json({ error: "Salesforce connector is not configured on this server." }, 503);
+    }
+    const origin = new URL(c.req.url).origin;
+    const state = encryptToken(JSON.stringify({ u: user.unionId, t: Date.now() }));
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: process.env.SALESFORCE_CLIENT_ID!,
+      redirect_uri: `${origin}/api/connect/salesforce/callback`,
+      scope: SF_SCOPES,
+      state,
+    });
+    return c.redirect(`${SF_LOGIN()}/services/oauth2/authorize?${params}`);
+  });
+
+  app.get("/api/connect/salesforce/callback", async (c) => {
+    const url = new URL(c.req.url);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state") ?? "";
+    const origin = url.origin;
+    if (!code || !salesforceConfigured()) return c.redirect(`${origin}/#/?connect=error`);
+    let unionId: string;
+    try {
+      const parsed = JSON.parse(decryptToken(state)) as { u: string; t: number };
+      if (Date.now() - parsed.t > 10 * 60_000) throw new Error("stale state");
+      unionId = parsed.u;
+    } catch {
+      return c.redirect(`${origin}/#/?connect=error`);
+    }
+    try {
+      const tokenRes = await fetch(`${SF_LOGIN()}/services/oauth2/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          code,
+          client_id: process.env.SALESFORCE_CLIENT_ID!,
+          client_secret: process.env.SALESFORCE_CLIENT_SECRET!,
+          redirect_uri: `${origin}/api/connect/salesforce/callback`,
+          grant_type: "authorization_code",
+        }),
+      });
+      const tokens = (await tokenRes.json()) as {
+        access_token?: string;
+        refresh_token?: string;
+        instance_url?: string;
+      };
+      if (!tokenRes.ok || !tokens.access_token || !tokens.instance_url) {
+        throw new Error("salesforce token exchange failed");
+      }
+      let label = "Salesforce";
+      try {
+        const infoRes = await fetch(`${tokens.instance_url}/services/oauth2/userinfo`, {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+        const info = (await infoRes.json()) as { name?: string; email?: string };
+        label = info.name ?? info.email ?? label;
+      } catch {
+        /* label stays generic */
+      }
+
+      const db = getDb();
+      const userRows = await db.select().from(schema.users).where(eq(schema.users.unionId, unionId)).limit(1);
+      const user = userRows[0];
+      if (!user) throw new Error("user not found");
+      const existing = await db
+        .select()
+        .from(schema.connections)
+        .where(
+          and(eq(schema.connections.userId, user.id), eq(schema.connections.provider, "salesforce")),
+        )
+        .limit(1);
+      const values = {
+        label,
+        scopes: SF_SCOPES,
+        instanceUrl: tokens.instance_url,
+        accessTokenEnc: encryptToken(tokens.access_token),
+        ...(tokens.refresh_token ? { refreshTokenEnc: encryptToken(tokens.refresh_token) } : {}),
+      };
+      if (existing[0]) {
+        await db.update(schema.connections).set(values).where(eq(schema.connections.id, existing[0].id));
+      } else {
+        await db.insert(schema.connections).values({
+          userId: user.id,
+          provider: "salesforce",
+          refreshTokenEnc: tokens.refresh_token ? encryptToken(tokens.refresh_token) : null,
+          ...values,
+        });
+      }
+      return c.redirect(`${origin}/#/?connect=salesforce`);
+    } catch {
+      return c.redirect(`${origin}/#/?connect=error`);
+    }
+  });
+
+  /* ---------------- Mission Deck snapshot ---------------- */
+
+  // One call, every connected surface — the single-screen briefing.
+  app.get("/api/connect/deck", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    const sections: Record<string, unknown> = {};
+    const has = async (provider: string) =>
+      Boolean(await loadConnection(user.id, provider));
+
+    if (await has("google")) {
+      try {
+        sections.gmail = await gmailList(user.id, { query: "is:unread", max: 5 } as never);
+      } catch (e) {
+        sections.gmail = { error: (e as Error).message };
+      }
+      try {
+        sections.calendar = await calendarUpcoming(user.id, { days: 2, max: 5 } as never);
+      } catch (e) {
+        sections.calendar = { error: (e as Error).message };
+      }
+    }
+    if (await has("slack")) {
+      try {
+        sections.slack = await slackChannels(user.id);
+      } catch (e) {
+        sections.slack = { error: (e as Error).message };
+      }
+    }
+    if (await has("salesforce")) {
+      try {
+        sections.salesforce = await sfOpportunities(user.id);
+      } catch (e) {
+        sections.salesforce = { error: (e as Error).message };
+      }
+    }
+    return c.json({ ok: true, sections });
+  });
+
   // Connection status for the signed-in user.
   app.get("/api/connect/status", async (c) => {
     let user;
@@ -361,7 +797,14 @@ export function registerConnectRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       })
       .from(schema.connections)
       .where(eq(schema.connections.userId, user.id));
-    return c.json({ configured: { google: googleConfigured() }, connections: rows });
+    return c.json({
+      configured: {
+        google: googleConfigured(),
+        slack: slackConfigured(),
+        salesforce: salesforceConfigured(),
+      },
+      connections: rows,
+    });
   });
 
   // Disconnect a provider.
@@ -407,6 +850,18 @@ export function registerConnectRoutes(app: Hono<{ Bindings: HttpBindings }>) {
           return c.json({ ok: true, result: await gmailSend(user.id, args as never) });
         case "calendar_upcoming":
           return c.json({ ok: true, result: await calendarUpcoming(user.id, args as never) });
+        case "slack_channels":
+          return c.json({ ok: true, result: await slackChannels(user.id) });
+        case "slack_read":
+          return c.json({ ok: true, result: await slackRead(user.id, args as never) });
+        case "slack_send":
+          return c.json({ ok: true, result: await slackSend(user.id, args as never) });
+        case "salesforce_query":
+          return c.json({ ok: true, result: await sfQuery(user.id, String(args.soql ?? "")) });
+        case "salesforce_opportunities":
+          return c.json({ ok: true, result: await sfOpportunities(user.id) });
+        case "salesforce_update":
+          return c.json({ ok: true, result: await sfUpdate(user.id, args as never) });
         default:
           return c.json({ error: `Unknown tool: ${body.tool}` }, 400);
       }

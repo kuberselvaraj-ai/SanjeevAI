@@ -249,3 +249,25 @@ mark.anchor-mark {
 .rise-in {
   animation: rise-in 0.25s ease-out both;
 }
+
+/* ----- TV mode: ten-foot interface (large type, roomier controls) ----- */
+html.tv-mode {
+  font-size: 19px;
+}
+html.tv-mode body {
+  letter-spacing: 0.01em;
+}
+html.tv-mode button,
+html.tv-mode input,
+html.tv-mode textarea,
+html.tv-mode select {
+  min-height: 2.4rem;
+}
+html.tv-mode .font-display {
+  letter-spacing: 0.01em;
+}
+@media (min-width: 768px) {
+  html.tv-mode aside {
+    width: 19rem;
+  }
+}

@@ -114,6 +114,8 @@ export interface Settings {
   council: boolean
   /** user-added models — appear in the picker, routed via first-party key or OpenRouter */
   customModels: CustomModel[]
+  /** TV / ten-foot mode — large type, voice-first, deck-forward */
+  tvMode?: boolean
 }
 
 /**

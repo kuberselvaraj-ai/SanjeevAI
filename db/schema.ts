@@ -151,6 +151,8 @@ export const connections = mysqlTable("connections", {
   provider: varchar("provider", { length: 32 }).notNull(), // 'google' | 'slack' | 'salesforce'
   /** account label, e.g. the connected Gmail address */
   label: varchar("label", { length: 320 }),
+  /** provider-specific base URL, e.g. the Salesforce instance URL */
+  instanceUrl: varchar("instanceUrl", { length: 255 }),
   scopes: text("scopes"),
   accessTokenEnc: text("accessTokenEnc").notNull(),
   refreshTokenEnc: text("refreshTokenEnc"),

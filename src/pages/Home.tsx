@@ -59,6 +59,7 @@ import { ChatView } from '@/components/ChatView'
 import { Composer } from '@/components/Composer'
 import { speakText, stopSpeaking, transcribeAudio, voiceAvailable } from '@/lib/voice'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { DeckView } from '@/components/DeckView'
 import { BriefsView } from '@/components/BriefsView'
 import { VideoView } from '@/components/VideoView'
 import { ImageView } from '@/components/ImageView'
@@ -294,6 +295,12 @@ export default function Home() {
     document.documentElement.classList.toggle('dark', settings.theme === 'dark')
   }, [settings.theme])
 
+  // ----- TV mode: ten-foot interface, deck-forward -----
+  useEffect(() => {
+    document.documentElement.classList.toggle('tv-mode', Boolean(settings.tvMode))
+    if (settings.tvMode && hosted) setView((v) => (v === 'chat' ? 'deck' : v))
+  }, [settings.tvMode, hosted])
+
   const active = conversations.find((c) => c.id === activeId) ?? null
 
   const updateConversation = useCallback((id: string, fn: (c: Conversation) => Conversation) => {
@@ -502,12 +509,10 @@ export default function Home() {
       // specialist toolbox — and in Auto mode always goes to the
       // orchestrator brain (Kimi K3, our strongest agent model).
       const wantsPipeline = needsAgentTools(lastUser?.content ?? '')
-      // Connector intents (email / calendar) also go to the orchestrator
-      // brain — tool calling runs on Kimi models.
+      // Connector intents (email / calendar / Slack / Salesforce) also go to
+      // the orchestrator brain — tool calling runs on Kimi models.
       const wantsConnectors =
-        hosted &&
-        connections.some((cn) => cn.provider === 'google') &&
-        needsConnectorTools(lastUser?.content ?? '')
+        hosted && connections.length > 0 && needsConnectorTools(lastUser?.content ?? '')
       const route = resolveChatModel(conv.model, lastUser?.content ?? '', hasImages, premium)
       let resolved = route.model
       if ((wantsPipeline || wantsConnectors) && conv.model === AUTO_MODEL) resolved = 'kimi-k3'
@@ -1311,7 +1316,21 @@ export default function Home() {
         onOpenVault={() => setVaultOpen(true)}
       />
 
-      {view === 'briefs' ? (
+      {view === 'deck' ? (
+        <DeckView
+          hosted={hosted}
+          userName={user?.name}
+          connections={connections}
+          vault={vault}
+          onOpenVault={() => setVaultOpen(true)}
+          onAsk={(p) => {
+            setView('chat')
+            send(p)
+          }}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+      ) : view === 'briefs' ? (
         <BriefsView
           dark={settings.theme === 'dark'}
           onOpenSidebar={() => setSidebarOpen(true)}

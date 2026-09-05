@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, Eye, EyeOff, ExternalLink, Brain, Trash2, Link2, Unlink, Mail } from 'lucide-react'
+import { X, Eye, EyeOff, ExternalLink, Brain, Trash2, Link2, Unlink, Mail, Slack, Database } from 'lucide-react'
 import type { Settings } from '@/lib/types'
 import { CHAT_MODELS, toKimiModels } from '@/lib/models'
 import { loadMemories, saveMemories } from '@/lib/memory'
@@ -55,9 +55,30 @@ function SecretField({
 }
 
 /** Linked accounts — Gmail, Calendar, and more to come. Hosted mode only. */
+const CONNECTORS = [
+  {
+    provider: 'google',
+    name: 'Google — Gmail & Calendar',
+    icon: Mail,
+    blurb: 'Read & draft email, check your schedule — by chat or voice',
+  },
+  {
+    provider: 'slack',
+    name: 'Slack',
+    icon: Slack,
+    blurb: 'Read channels and post messages — by chat or voice',
+  },
+  {
+    provider: 'salesforce',
+    name: 'Salesforce',
+    icon: Database,
+    blurb: 'Query your pipeline, update records — by chat or voice',
+  },
+] as const
+
 function ConnectionsSection() {
   const [status, setStatus] = useState<{
-    configured: { google: boolean }
+    configured: Record<string, boolean>
     connections: { provider: string; label?: string | null }[]
   } | null>(null)
 
@@ -69,8 +90,6 @@ function ConnectionsSection() {
   }
   useEffect(refresh, [])
 
-  const google = status?.connections.find((c) => c.provider === 'google')
-
   return (
     <div className="rounded-lg border border-border">
       <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] font-medium">
@@ -80,51 +99,57 @@ function ConnectionsSection() {
           — accounts Sanjeev AI can act on
         </span>
       </div>
-      <div className="flex items-center gap-3 border-t border-border px-3 py-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Mail size={15} className="text-primary" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-medium">Google — Gmail & Calendar</span>
-          <span className="block truncate text-[11.5px] text-muted-foreground">
-            {google
-              ? `Connected as ${google.label ?? 'your Google account'}`
-              : status?.configured.google
-                ? 'Read & draft email, check your schedule — by chat or voice'
-                : 'Not configured on this server yet'}
-          </span>
-        </span>
-        {google ? (
-          <button
-            onClick={async () => {
-              await fetch('/api/connect/disconnect', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: 'google' }),
-              }).catch(() => {})
-              refresh()
-            }}
-            className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:border-destructive/40 hover:text-destructive"
-          >
-            <Unlink size={12} />
-            Disconnect
-          </button>
-        ) : (
-          <button
-            onClick={() => {
-              window.location.href = '/api/connect/google/start'
-            }}
-            disabled={!status?.configured.google}
-            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"
-          >
-            Connect
-          </button>
-        )}
-      </div>
+      {CONNECTORS.map(({ provider, name, icon: Icon, blurb }) => {
+        const conn = status?.connections.find((c) => c.provider === provider)
+        const configured = status?.configured?.[provider]
+        return (
+          <div key={provider} className="flex items-center gap-3 border-t border-border px-3 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <Icon size={15} className="text-primary" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium">{name}</span>
+              <span className="block truncate text-[11.5px] text-muted-foreground">
+                {conn
+                  ? `Connected as ${conn.label ?? `your ${name} account`}`
+                  : configured
+                    ? blurb
+                    : 'Not configured on this server yet'}
+              </span>
+            </span>
+            {conn ? (
+              <button
+                onClick={async () => {
+                  await fetch('/api/connect/disconnect', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider }),
+                  }).catch(() => {})
+                  refresh()
+                }}
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+              >
+                <Unlink size={12} />
+                Disconnect
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  window.location.href = `/api/connect/${provider}/start`
+                }}
+                disabled={!configured}
+                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"
+              >
+                Connect
+              </button>
+            )}
+          </div>
+        )
+      })}
       <p className="border-t border-border px-3 py-2 text-[10.5px] leading-4 text-muted-foreground/70">
-        Tokens stay encrypted on the server. Drafts always need your explicit “send it” before
-        anything goes out.
+        Tokens stay encrypted on the server. Emails, Slack posts, and Salesforce changes always
+        need your explicit approval before anything goes out.
       </p>
     </div>
   )
@@ -399,6 +424,22 @@ export function SettingsDialog({
             <Switch
               checked={draft.council}
               onCheckedChange={(v) => set('council', v)}
+              className="mt-0.5 shrink-0"
+            />
+          </div>
+
+          {/* TV mode — ten-foot interface for the big screen */}
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-border px-3 py-3">
+            <div>
+              <div className="text-[13px] font-medium">TV mode</div>
+              <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+                Ten-foot interface for a TV or wall screen — large type, roomier controls, and the
+                Mission Deck as the home view. Pair it with voice mode for a hands-free setup.
+              </p>
+            </div>
+            <Switch
+              checked={draft.tvMode ?? false}
+              onCheckedChange={(v) => set('tvMode', v)}
               className="mt-0.5 shrink-0"
             />
           </div>

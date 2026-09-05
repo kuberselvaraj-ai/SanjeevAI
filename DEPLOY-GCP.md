@@ -215,3 +215,50 @@ Files are stored as base64 payloads (8 MB cap) with extracted text cached
 alongside — re-attaching a vaulted file costs zero re-upload and zero
 re-extraction. The API shape is storage-agnostic; move payloads to a GCS
 bucket later if the DB grows.
+
+## Slack connector
+
+1. Create a Slack app at https://api.slack.com/apps → "From scratch".
+2. OAuth & Permissions → Redirect URLs: add
+   `https://sanjeevai-796272357891.us-central1.run.app/api/connect/slack/callback`
+3. User Token Scopes: `channels:read`, `channels:history`, `groups:read`,
+   `groups:history`, `chat:write`, `users:read`.
+4. Set env vars on Cloud Run:
+
+```bash
+gcloud run services update sanjeevai --region us-central1 \
+  --update-env-vars SLACK_CLIENT_ID=...,SLACK_CLIENT_SECRET=...
+```
+
+## Salesforce connector
+
+1. Salesforce Setup → App Manager → New Connected App → enable OAuth.
+2. Callback URL:
+   `https://sanjeevai-796272357891.us-central1.run.app/api/connect/salesforce/callback`
+3. OAuth scopes: `api`, `refresh_token`, `openid`.
+4. Add the `instanceUrl` column and set env vars:
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -u sanjeevai -p sanjeevai -e "
+ALTER TABLE connections ADD COLUMN IF NOT EXISTS instanceUrl varchar(255) NULL;"
+gcloud run services update sanjeevai --region us-central1 \
+  --update-env-vars SALESFORCE_CLIENT_ID=...,SALESFORCE_CLIENT_SECRET=...
+```
+
+For a sandbox org, also set `SALESFORCE_LOGIN_HOST=https://test.salesforce.com`.
+
+Slack posts and Salesforce writes are confirm-gated: the agent must show the
+exact action and get an explicit "yes" before the server executes it.
+
+## Demo account for the live site
+
+Create an invite code, then sign up at /#/login with it:
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -u sanjeevai -p sanjeevai -e "
+INSERT INTO invite_codes (code, plan, maxUses, active) VALUES ('SANJ-DEMO-2026', 'pro', 50, 1);"
+```
+
+Suggested demo login: `demo@sanjeevai.com` with a password you choose at
+signup (invite code SANJ-DEMO-2026). The sandbox preview already has this
+account provisioned as `demo@sanjeevai.com` / `SanjeevDemo2026`.
