@@ -34,8 +34,23 @@ npm install
 npm run electron:dev
 ```
 
-A desktop window opens. Click **Settings** (bottom-left) and paste your Kimi API key —
-that's it.
+A desktop window opens. The app loads the **hosted Sanjeev AI** by default —
+sign in with your account and everything syncs: cloud vault, connectors,
+Mission Deck, usage, briefs. You stay signed in across launches.
+
+Prefer fully offline? **Mode → Offline — local bundle** (menu bar) switches to
+the on-device app: paste your Kimi API key in **Settings** and nothing leaves
+the machine. If the hosted site can't be reached, the app falls back to
+offline mode automatically.
+
+To point the shell at a different host (e.g. a custom domain):
+
+```bash
+SANJEEV_HOST_URL=https://sanjeevai.com npm run electron:dev
+```
+
+Native extras work in both modes: attaching local folders and git repos as
+chat context (the folder button in the composer).
 
 ## Build a double-clickable `.app` / `.dmg`
 
@@ -111,9 +126,10 @@ OpenAI-compatible and called directly from the app; no server is involved.
 
 ## Hosted mode (multi-user web app)
 
-The same codebase now runs as a hosted, multi-user web app (tRPC + Hono + MySQL via
-Drizzle). In the browser it requires login; the Electron desktop app is unaffected and
-still uses each user's own API keys.
+The same codebase also runs as a hosted, multi-user web app (tRPC + Hono + MySQL via
+Drizzle). The Electron desktop app loads the hosted app by default (sign-in syncs the
+cloud vault, connectors, and usage across devices) and falls back to the local
+device-keys bundle when offline or when the user picks **Mode → Offline**.
 
 - **Accounts**: email/password signup + "Sign in with Kimi" (OAuth). Session = httpOnly
   JWT cookie (1 year).

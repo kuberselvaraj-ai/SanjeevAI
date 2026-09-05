@@ -5,6 +5,29 @@ const { execFile } = require('child_process')
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL
 
+/**
+ * Hosted-first shell: the desktop app IS the hosted app — sign in once with
+ * your Sanjeev AI account and the cloud vault, connectors, deck, usage, and
+ * briefs are the same as the browser. The session persists in Electron's
+ * default partition, so you stay signed in across launches.
+ *
+ * Offline fallback: if the hosted app can't be reached (or the user picks
+ * "Work offline"), the local bundle loads in BYOK mode — keys and the vault
+ * live on the device only.
+ */
+const HOST_URL = process.env.SANJEEV_HOST_URL || 'https://sanjeevai-796272357891.us-central1.run.app'
+const LOCAL_INDEX = path.join(__dirname, '../dist/public/index.html')
+
+function loadHosted(win) {
+  win.__offline = false
+  win.loadURL(HOST_URL)
+}
+
+function loadLocal(win) {
+  win.__offline = true
+  win.loadFile(LOCAL_INDEX)
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -12,7 +35,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'Sanjeev AI',
-    backgroundColor: '#f5f0e1',
+    backgroundColor: '#050810',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
@@ -22,7 +45,8 @@ function createWindow() {
     },
   })
 
-  // Open external links (API console, docs) in the system browser
+  // Open external links (API console, docs) in the system browser.
+  // OAuth redirects are top-level navigations and flow through in-app.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) shell.openExternal(url)
     return { action: 'deny' }
@@ -31,12 +55,16 @@ function createWindow() {
   if (isDev) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    win.loadFile(path.join(__dirname, '../dist/public/index.html'))
+    loadHosted(win)
   }
 
-  // Diagnostics: surface load failures instead of a silent white screen
-  win.webContents.on('did-fail-load', (_e, code, desc) => {
+  // Hosted unreachable (offline, DNS, server down) → local BYOK bundle.
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error(`[Sanjeev AI] page failed to load (${code}): ${desc}`)
+    if (!isDev && !win.__offline && url.startsWith(HOST_URL)) {
+      console.error('[Sanjeev AI] falling back to offline mode (local bundle, device keys)')
+      loadLocal(win)
+    }
   })
   win.webContents.on('render-process-gone', (_e, details) => {
     console.error('[Sanjeev AI] renderer crashed:', details.reason)
@@ -143,7 +171,34 @@ ipcMain.handle('workspace:cloneRepo', (_e, url) => {
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
+// Single instance — a second launch focuses the existing window.
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+}
+
 app.whenReady().then(() => {
+  const modeMenu = {
+    label: 'Mode',
+    submenu: [
+      {
+        label: 'Online — hosted account (synced vault, connectors)',
+        click: () => BrowserWindow.getAllWindows().forEach((w) => loadHosted(w)),
+      },
+      {
+        label: 'Offline — local bundle (device keys)',
+        click: () => BrowserWindow.getAllWindows().forEach((w) => loadLocal(w)),
+      },
+    ],
+  }
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
@@ -161,8 +216,13 @@ app.whenReady().then(() => {
         },
         { role: 'editMenu' },
         { role: 'viewMenu' },
+        modeMenu,
         { role: 'windowMenu' },
       ]),
+    )
+  } else {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, modeMenu]),
     )
   }
   createWindow()
