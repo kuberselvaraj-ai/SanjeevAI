@@ -97,7 +97,9 @@ export default function Home() {
     store.loadConversations(),
   )
   const [activeId, setActiveId] = useState<string | null>(conversations[0]?.id ?? null)
-  const [view, setView] = useState<View>('chat')
+  // Hosted leads with the Mission Deck (the executive home); the offline
+  // desktop bundle leads with chat.
+  const [view, setView] = useState<View>(() => (isDesktop() ? 'chat' : 'deck'))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [streaming, setStreaming] = useState(false)

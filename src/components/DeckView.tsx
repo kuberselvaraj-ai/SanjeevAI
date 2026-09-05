@@ -142,6 +142,51 @@ export function DeckView({
   const sf = sections.salesforce
   const recentVault = vault.slice(0, 6)
 
+  // Action points — what actually needs the executive, derived from the tiles.
+  const actions: { icon: typeof Mail; label: string; detail: string; prompt: string }[] = []
+  if (Array.isArray(gmail) && gmail.length > 0) {
+    actions.push({
+      icon: Mail,
+      label: `${gmail.length} unread email${gmail.length === 1 ? '' : 's'}`,
+      detail: gmail[0]?.subject ? `Latest: ${gmail[0].subject}` : 'Inbox needs a triage pass',
+      prompt:
+        'Summarize my unread email — sender, subject, and what each needs from me. Flag anything urgent.',
+    })
+  }
+  if (Array.isArray(calendar) && calendar.length > 0) {
+    const next = calendar[0]
+    const when = next?.start
+      ? new Date(next.start).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      : ''
+    actions.push({
+      icon: Calendar,
+      label: `Next meeting${when ? ` at ${when}` : ''}`,
+      detail: next?.summary ?? 'Coming up',
+      prompt: `Prep me for my next meeting${next?.summary ? ` ("${next.summary}")` : ''} — context, talking points, and any related email.`,
+    })
+  }
+  if (sf && !isErr(sf) && Array.isArray(sf.records) && sf.records.length > 0) {
+    const soon = sf.records.filter((r) => {
+      const d = typeof r.CloseDate === 'string' ? new Date(r.CloseDate).getTime() : NaN
+      return Number.isFinite(d) && d - Date.now() < 7 * 86_400_000
+    })
+    actions.push({
+      icon: Database,
+      label: soon.length > 0 ? `${soon.length} deal${soon.length === 1 ? '' : 's'} closing this week` : 'Pipeline review',
+      detail: soon[0] ? String(soon[0].Name ?? '') : `${sf.records.length} open opportunities`,
+      prompt:
+        'Review my open Salesforce opportunities — which deals close this week, and what should I do on each?',
+    })
+  }
+  if (has('slack')) {
+    actions.push({
+      icon: Slack,
+      label: 'Slack catch-up',
+      detail: 'Scan channels for anything awaiting you',
+      prompt: 'Catch me up on my Slack channels — anything that needs a reply or a decision?',
+    })
+  }
+
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
@@ -149,8 +194,9 @@ export function DeckView({
   })
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 pb-10 pt-5 md:px-6">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl px-4 pb-6 pt-5 md:px-6">
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenSidebar}
@@ -176,23 +222,49 @@ export function DeckView({
           </button>
         </div>
 
-        {/* Quick voice/chat prompts */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {[
-            'Summarize my unread email',
-            "What's on my calendar today?",
-            'Review my sales pipeline',
-            'Catch me up on Slack',
-          ].map((p) => (
-            <button
-              key={p}
-              onClick={() => onAsk(p)}
-              className="rounded-full border border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        {/* Action points — what needs the executive right now */}
+        {actions.length > 0 ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {actions.map((a) => (
+              <button
+                key={a.label}
+                onClick={() => onAsk(a.prompt)}
+                className="group flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/[0.06] px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary/10"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <a.icon size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold">{a.label}</span>
+                  <span className="block truncate text-[11.5px] text-muted-foreground">
+                    {a.detail}
+                  </span>
+                </span>
+                <ChevronRight
+                  size={15}
+                  className="shrink-0 text-primary/50 transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+                />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[
+              'Summarize my unread email',
+              "What's on my calendar today?",
+              'Review my sales pipeline',
+              'Catch me up on Slack',
+            ].map((p) => (
+              <button
+                key={p}
+                onClick={() => onAsk(p)}
+                className="rounded-full border border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <Tile
@@ -408,6 +480,52 @@ export function DeckView({
             )}
           </Tile>
         </div>
+        </div>
+      </div>
+
+      <DeckComposer onAsk={onAsk} />
+    </div>
+  )
+}
+
+/** The chat box docked at the bottom of the deck — the executive's direct line. */
+function DeckComposer({ onAsk }: { onAsk: (prompt: string) => void }) {
+  const [text, setText] = useState('')
+  const submit = () => {
+    const t = text.trim()
+    if (!t) return
+    setText('')
+    onAsk(t)
+  }
+  return (
+    <div className="border-t border-border bg-background/80 backdrop-blur">
+      <div className="mx-auto w-full max-w-5xl px-4 py-3 md:px-6">
+        <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-lg focus-within:border-primary/50">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                submit()
+              }
+            }}
+            rows={1}
+            placeholder="Direct your day — ask, delegate, decide…"
+            className="max-h-32 min-h-9 w-full resize-none bg-transparent py-1.5 text-[14px] outline-none placeholder:text-muted-foreground/60"
+          />
+          <button
+            onClick={submit}
+            disabled={!text.trim()}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-30"
+            title="Send — the answer lands in Chat"
+          >
+            <ChevronRight size={17} />
+          </button>
+        </div>
+        <p className="mt-1.5 text-center text-[10.5px] text-muted-foreground/60">
+          Enter to send — replies stream in the Chat tab. Voice mode lives there too.
+        </p>
       </div>
     </div>
   )
