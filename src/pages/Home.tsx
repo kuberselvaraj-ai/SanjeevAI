@@ -57,7 +57,14 @@ import {
   digestPatchFor,
   recallBlock,
   uncompressedMessages,
+  type DigestSource,
 } from '@/lib/chatDigest'
+import {
+  cloudDigestDelete,
+  cloudDigestPut,
+  cloudDigestsPull,
+  type CloudDigest,
+} from '@/lib/digestCloud'
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
 import { Sidebar, type View } from '@/components/Sidebar'
@@ -322,6 +329,41 @@ export default function Home() {
     conversationsRef.current = conversations
   }, [conversations])
 
+  // ── Cloud digest sync ──────────────────────────────────────────────────
+  // Digests mirror to the hosted DB so labels, compression, and recall
+  // survive device switches. Digests whose threads aren't on THIS device
+  // still feed cross-chat recall (the portable memory of those threads).
+  const [cloudDigests, setCloudDigests] = useState<CloudDigest[]>([])
+  const cloudDigestsRef = useRef<CloudDigest[]>([])
+  useEffect(() => {
+    cloudDigestsRef.current = cloudDigests
+  }, [cloudDigests])
+
+  const refreshCloudDigests = useCallback(async () => {
+    if (!hosted) return
+    const pulled = await cloudDigestsPull()
+    setCloudDigests(pulled)
+    // Merge newer server copies into local conversations (same thread on
+    // this device, but labeled on another one since).
+    setConversations((prev) =>
+      prev.map((c) => {
+        const remote = pulled.find((d) => d.convId === c.id)
+        if (!remote || (c.digestUpdatedAt ?? 0) >= remote.updatedAt) return c
+        return {
+          ...c,
+          digest: remote.digest,
+          digestLabels: remote.labels,
+          openLoops: remote.openLoops,
+          digestThrough: remote.digestThrough,
+          digestUpdatedAt: remote.updatedAt,
+        }
+      }),
+    )
+  }, [hosted])
+  useEffect(() => {
+    if (user) refreshCloudDigests()
+  }, [user, refreshCloudDigests])
+
   // ── Internal labeling: fold aged turns into the rolling digest ────────
   // Runs AFTER a reply completes, never on the critical path; one flight
   // per conversation. The digest is what future turns replay instead of
@@ -339,7 +381,25 @@ export default function Home() {
             const conv = conversationsRef.current.find((c) => c.id === convId)
             if (!conv || conv.temp) return
             const patch = await digestPatchFor(conv, settings, hosted)
-            if (patch) updateConversation(convId, (c) => ({ ...c, ...patch }))
+            if (patch) {
+              const stamped = { ...patch, digestUpdatedAt: Date.now() }
+              updateConversation(convId, (c) => ({ ...c, ...stamped }))
+              // Mirror to the cloud so other devices inherit the labeling.
+              if (hosted) {
+                const cloud = {
+                  digest: patch.digest!,
+                  labels: patch.digestLabels!,
+                  openLoops: patch.openLoops!,
+                  digestThrough: patch.digestThrough!,
+                }
+                void cloudDigestPut(convId, cloud).then(() =>
+                  setCloudDigests((prev) => [
+                    { convId, ...cloud, updatedAt: stamped.digestUpdatedAt },
+                    ...prev.filter((d) => d.convId !== convId),
+                  ]),
+                )
+              }
+            }
           } finally {
             digestInFlight.current.delete(convId)
           }
@@ -409,8 +469,11 @@ export default function Home() {
         return next
       })
       setComments((prev) => prev.filter((c) => c.conversationId !== id))
+      // Its mirrored digest goes too — on every device.
+      setCloudDigests((prev) => prev.filter((d) => d.convId !== id))
+      if (hosted) void cloudDigestDelete(id)
     },
-    [activeId],
+    [activeId, hosted],
   )
 
   // ----- anchored comments (Comms log) -----
@@ -499,11 +562,28 @@ export default function Home() {
       if (compression) out.push({ role: 'system', content: compression })
       // Cross-chat recall: only the top-scoring digests from other threads,
       // scored locally (zero tokens), capped tiny — memory without the bill.
+      // The pool is local conversations PLUS cloud digests mirrored from
+      // this account's other devices (threads that never lived here).
       const lastUserText = [...messages]
         .reverse()
         .find((m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim())
+      const localIds = new Set(conversationsRef.current.map((c) => c.id))
+      const cloudOnly: DigestSource[] = cloudDigestsRef.current
+        .filter((d) => !localIds.has(d.convId))
+        .map((d) => ({
+          id: d.convId,
+          title: '',
+          digest: d.digest,
+          digestLabels: d.labels,
+          openLoops: d.openLoops,
+          updatedAt: d.updatedAt,
+        }))
       const recall = lastUserText
-        ? recallBlock(lastUserText.content as string, conversationsRef.current, conv.id)
+        ? recallBlock(
+            lastUserText.content as string,
+            [...conversationsRef.current, ...cloudOnly],
+            conv.id,
+          )
         : ''
       if (recall) out.push({ role: 'system', content: recall })
       for (const m of uncompressedMessages(conv, messages)) {

@@ -262,3 +262,25 @@ INSERT INTO invite_codes (code, plan, maxUses, active) VALUES ('SANJ-DEMO-2026',
 Suggested demo login: `demo@sanjeevai.com` with a password you choose at
 signup (invite code SANJ-DEMO-2026). The sandbox preview already has this
 account provisioned as `demo@sanjeevai.com` / `SanjeevDemo2026`.
+
+## Chat digests (cross-device memory)
+
+Rolling conversation digests (internal labels + compressed summaries) sync to
+the database so recall and compression survive device switches. One-time
+table creation on the production database:
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -u sanjeevai -p sanjeevai -e "
+CREATE TABLE IF NOT EXISTS chat_digests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  userId BIGINT UNSIGNED NOT NULL,
+  convId VARCHAR(64) NOT NULL,
+  digest TEXT NOT NULL,
+  labels VARCHAR(255) NOT NULL DEFAULT '',
+  openLoops TEXT,
+  digestThrough VARCHAR(64) NOT NULL DEFAULT '',
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY chat_digests_user_conv (userId, convId),
+  CONSTRAINT chat_digests_user_fk FOREIGN KEY (userId) REFERENCES users(id)
+);"
+```

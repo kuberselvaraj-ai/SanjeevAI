@@ -1,7 +1,10 @@
 import type { Hono } from "hono";
 import type { HttpBindings } from "@hono/node-server";
+import { and, eq } from "drizzle-orm";
+import * as schema from "@db/schema";
 import { PLANS } from "@contracts/constants";
 import { authenticateRequest } from "./kimi/auth";
+import { getDb } from "./queries/connection";
 import { getMonthUsage, recordUsage } from "./queries/usage";
 import { chatComplete, extractFileText, moonshotKey, openChatStream } from "./services/moonshot";
 import { dashscopeConfigured, qwenSpeak, qwenTranscribe } from "./services/dashscope";
@@ -286,6 +289,95 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       /* fall through with the empty digest */
     }
     return c.json({ ok: true, digest });
+  });
+
+  // ── Digest sync: the portable memory of each thread ────────────────────
+  // Conversations stay client-side; their digests mirror here so rolling
+  // compression, labels, and cross-chat recall survive device switches.
+  app.get("/api/hosted/digests", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(schema.chatDigests)
+      .where(eq(schema.chatDigests.userId, user.id));
+    return c.json({
+      digests: rows.map((r) => ({
+        convId: r.convId,
+        digest: r.digest,
+        labels: r.labels ? r.labels.split(",").filter(Boolean) : [],
+        openLoops: (() => {
+          try {
+            const v = JSON.parse(r.openLoops ?? "[]") as unknown;
+            return Array.isArray(v) ? v.map(String).slice(0, 3) : [];
+          } catch {
+            return [];
+          }
+        })(),
+        digestThrough: r.digestThrough,
+        updatedAt: r.updatedAt.getTime(),
+      })),
+    });
+  });
+
+  app.put("/api/hosted/digests", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      convId?: string;
+      digest?: string;
+      labels?: string[];
+      openLoops?: string[];
+      digestThrough?: string;
+    };
+    const convId = String(body.convId ?? "").slice(0, 64);
+    const digest = String(body.digest ?? "").trim().slice(0, 700);
+    if (!convId || !digest) return c.json({ error: "convId and digest are required" }, 400);
+    const labels = (body.labels ?? [])
+      .map((l) => String(l).trim().toLowerCase().slice(0, 30))
+      .filter(Boolean)
+      .slice(0, 6)
+      .join(",");
+    const openLoops = JSON.stringify(
+      (body.openLoops ?? []).map((l) => String(l).slice(0, 140)).filter(Boolean).slice(0, 3),
+    );
+    const digestThrough = String(body.digestThrough ?? "").slice(0, 64);
+    const db = getDb();
+    await db
+      .insert(schema.chatDigests)
+      .values({ userId: user.id, convId, digest, labels, openLoops, digestThrough })
+      .onDuplicateKeyUpdate({
+        set: { digest, labels, openLoops, digestThrough, updatedAt: new Date() },
+      });
+    return c.json({ ok: true });
+  });
+
+  app.delete("/api/hosted/digests/:convId", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    const db = getDb();
+    await db
+      .delete(schema.chatDigests)
+      .where(
+        and(
+          eq(schema.chatDigests.userId, user.id),
+          eq(schema.chatDigests.convId, c.req.param("convId").slice(0, 64)),
+        ),
+      );
+    return c.json({ ok: true });
   });
 
   // ── Streaming chat relay with per-user token metering ──────────────────

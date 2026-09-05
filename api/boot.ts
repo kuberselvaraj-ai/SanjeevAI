@@ -13,7 +13,16 @@ import { Paths } from "@contracts/constants";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
-app.use(bodyLimit({ maxSize: 50 * 1024 * 1024 }));
+// Only requests with a declared body need limiting. Requests with neither
+// Content-Length nor Transfer-Encoding (e.g. a bare DELETE) have nothing to
+// limit — and routing them through the body-rebuild path trips an undici
+// incompatibility in the dev server (500 on `new Request(raw, {duplex})`).
+const limitBody = bodyLimit({ maxSize: 50 * 1024 * 1024 });
+app.use(async (c, next) => {
+  const h = c.req.raw.headers;
+  if (!h.has("content-length") && !h.has("transfer-encoding")) return next();
+  return limitBody(c, next);
+});
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 registerHostedRoutes(app);
 registerConnectRoutes(app);

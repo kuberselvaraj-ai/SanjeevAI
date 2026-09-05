@@ -59,6 +59,8 @@ export interface Conversation {
   openLoops?: string[]
   /** compression watermark: id of the last message folded into the digest */
   digestThrough?: string
+  /** when the digest was last refreshed — newer cloud copies win on merge */
+  digestUpdatedAt?: number
 }
 
 /** One entry inside an anchored comment thread (the first entry is the comment itself). */

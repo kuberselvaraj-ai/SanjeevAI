@@ -9,6 +9,7 @@ import {
   bigint,
   int,
   boolean,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
@@ -212,3 +213,35 @@ export const vaultFiles = mysqlTable("vault_files", {
 
 export type VaultFileRow = typeof vaultFiles.$inferSelect;
 export type InsertVaultFile = typeof vaultFiles.$inferInsert;
+
+/**
+ * Chat digests — the internal labels + rolling summaries the client computes
+ * per conversation, mirrored server-side so recall and compression survive
+ * device switches. One row per (user, conversation); conversations
+ * themselves stay client-side, the digest is the portable memory of them.
+ */
+export const chatDigests = mysqlTable(
+  "chat_digests",
+  {
+    id: serial("id").primaryKey(),
+    userId: bigint("userId", { mode: "number", unsigned: true })
+      .notNull()
+      .references(() => users.id),
+    /** the client-side conversation id (localStorage) this digest describes */
+    convId: varchar("convId", { length: 64 }).notNull(),
+    digest: text("digest").notNull(),
+    /** comma-separated lowercase topic tags */
+    labels: varchar("labels", { length: 255 }).default("").notNull(),
+    /** JSON array of unresolved items */
+    openLoops: text("openLoops"),
+    /** id of the last client message folded into the digest */
+    digestThrough: varchar("digestThrough", { length: 64 }).default("").notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("chat_digests_user_conv").on(t.userId, t.convId)],
+);
+
+export type ChatDigestRow = typeof chatDigests.$inferSelect;

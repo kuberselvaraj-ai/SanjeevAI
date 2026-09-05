@@ -155,8 +155,20 @@ function contentWords(text: string): Set<string> {
   return new Set(words)
 }
 
-/** Zero-token relevance of a conversation's digest to a query. */
-export function digestRelevance(query: string, conv: Conversation): number {
+/** Anything recall can score: a local conversation, or a cloud-only digest
+ *  mirrored from another device (full thread not present here). */
+export interface DigestSource {
+  id: string
+  title: string
+  digest?: string
+  digestLabels?: string[]
+  openLoops?: string[]
+  temp?: boolean
+  updatedAt: number
+}
+
+/** Zero-token relevance of a digest source to a query. */
+export function digestRelevance(query: string, conv: DigestSource): number {
   if (!conv.digest) return 0
   const q = contentWords(query)
   if (q.size === 0) return 0
@@ -173,14 +185,16 @@ export function digestRelevance(query: string, conv: Conversation): number {
 
 /**
  * Build the recall block for a new turn: the top digests from OTHER
- * conversations, capped small so recall never becomes its own token problem.
+ * threads — local conversations AND cloud-synced digests from the user's
+ * other devices — capped small so recall never becomes its own token
+ * problem.
  */
 export function recallBlock(
   query: string,
-  conversations: Conversation[],
+  sources: DigestSource[],
   activeId: string | null,
 ): string {
-  const scored = conversations
+  const scored = sources
     .filter((c) => c.id !== activeId && c.digest && !c.temp)
     .map((c) => ({ c, s: digestRelevance(query, c) }))
     .filter((x) => x.s >= 3)
