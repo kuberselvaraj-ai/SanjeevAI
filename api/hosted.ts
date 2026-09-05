@@ -163,6 +163,62 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     return c.json({ ok: true, sections });
   });
 
+  // ── Next moves: given a deck question + the AI's answer, propose the ────
+  // concrete follow-up actions an executive would take. The model suggests,
+  // the deck renders them as one-tap action cards; clicking one just sends
+  // its prompt back through the normal chat pipeline.
+  app.post("/api/hosted/deck-actions", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    if (!moonshotKey()) {
+      return c.json({ error: "Chat is not configured on this server." }, 503);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      query?: string;
+      answer?: string;
+      connections?: string[];
+    };
+    const context = {
+      query: String(body.query ?? "").slice(0, 600),
+      answer: String(body.answer ?? "").slice(0, 2500),
+      connectedApps: body.connections ?? [],
+    };
+    if (!context.query || !context.answer) return c.json({ ok: true, actions: [] });
+    const raw = await chatComplete({
+      model: "kimi-k3",
+      temperature: 0.4,
+      maxTokens: 3000,
+      messages: [
+        {
+          role: "system",
+          content: `You are the action layer of an executive AI console. Given the executive's request and the AI's answer, propose 1-3 concrete NEXT MOVES the executive would plausibly tap. Each move is executed by the AI when tapped. Rules: reply with ONLY JSON {"actions":[{"title":"…","prompt":"…"}]}; title = 2-5 words, imperative verb first ("Draft the reply", "Summarize for the board", "Save this to my vault"); prompt = the exact self-contained instruction to give the AI (first person, as the executive would say it); prefer moves that act on the answer's content (draft, decide, delegate, schedule, save) over generic follow-ups; never propose anything requiring apps that are not connected; if nothing sensible, return {"actions":[]}.`,
+        },
+        { role: "user", content: JSON.stringify(context) },
+      ],
+    }).catch(() => "");
+    let actions: { title: string; prompt: string }[] = [];
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(match?.[0] ?? "") as {
+        actions?: { title?: string; prompt?: string }[];
+      };
+      for (const a of parsed.actions ?? []) {
+        const title = String(a.title ?? "").trim().slice(0, 48);
+        const prompt = String(a.prompt ?? "").trim().slice(0, 600);
+        if (!title || !prompt) continue;
+        actions.push({ title, prompt });
+        if (actions.length >= 3) break;
+      }
+    } catch {
+      actions = [];
+    }
+    return c.json({ ok: true, actions });
+  });
+
   // ── Streaming chat relay with per-user token metering ──────────────────
   app.post("/api/hosted/chat", async (c) => {
     let user;

@@ -1099,6 +1099,34 @@ export default function Home() {
     [send],
   )
 
+  // ── Deck command bar ───────────────────────────────────────────────────
+  // Asking from the deck must NOT jump into the chat screen: the deck is the
+  // executive's desktop, and the AI works in the background. We fire send()
+  // (which routes, streams, and runs tools as usual), then pin the exchange
+  // to the conversation it landed in so the deck's answer dock can mirror it.
+  const [deckQuestion, setDeckQuestion] = useState<string | null>(null)
+  const [deckFocus, setDeckFocus] = useState<{ convId: string; question: string } | null>(null)
+
+  const deckAsk = useCallback(
+    (prompt: string) => {
+      setDeckQuestion(prompt)
+      send(prompt)
+    },
+    [send],
+  )
+
+  // Resolve which conversation the deck question landed in (send() may have
+  // just created it) by matching the question to the last user message.
+  useEffect(() => {
+    if (!deckQuestion || !activeId) return
+    const conv = conversations.find((c) => c.id === activeId)
+    const lastUser = conv?.messages.filter((m) => m.role === 'user').at(-1)
+    if (lastUser && lastUser.content === deckQuestion) {
+      setDeckFocus({ convId: activeId, question: deckQuestion })
+      setDeckQuestion(null)
+    }
+  }, [deckQuestion, activeId, conversations])
+
   /** Regenerate the last assistant reply (same prompt, fresh response). */
   const regenerate = useCallback(() => {
     const conv = conversations.find((c) => c.id === activeId)
@@ -1280,6 +1308,20 @@ export default function Home() {
     )
   }
 
+  // The exchange the deck's answer dock mirrors: the deck conversation's
+  // latest assistant reply to the question that was asked from the deck.
+  const deckConv = deckFocus ? conversations.find((c) => c.id === deckFocus.convId) : null
+  const deckReply = deckConv ? [...deckConv.messages].reverse().find((m) => m.role === 'assistant') : null
+  const deckExchange =
+    deckFocus && deckConv
+      ? {
+          question: deckFocus.question,
+          answer: deckReply?.content ?? '',
+          streaming: Boolean(deckReply?.streaming),
+          error: deckReply?.error,
+        }
+      : null
+
   const usage = usageQuery.data
   const usageSummary = usage
     ? usage.unlimited || !usage.limits
@@ -1331,11 +1373,9 @@ export default function Home() {
             .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))}
           briefsUnread={briefsUnreadQuery.data ?? 0}
           memories={loadMemories()}
+          exchange={deckExchange}
           onOpenVault={() => setVaultOpen(true)}
-          onAsk={(p) => {
-            setView('chat')
-            send(p)
-          }}
+          onAsk={deckAsk}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenSidebar={() => setSidebarOpen(true)}
           onContinueChat={(id) => {
@@ -1343,6 +1383,11 @@ export default function Home() {
             setView('chat')
           }}
           onOpenBriefs={() => setView('briefs')}
+          onOpenThread={() => {
+            if (deckFocus) setActiveId(deckFocus.convId)
+            setView('chat')
+          }}
+          onDismissExchange={() => setDeckFocus(null)}
         />
       ) : view === 'briefs' ? (
         <BriefsView

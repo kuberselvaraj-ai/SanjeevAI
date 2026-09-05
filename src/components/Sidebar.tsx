@@ -112,7 +112,9 @@ export function Sidebar({
           </button>
         </div>
 
-        {/* New chat */}
+        {/* New chat — hidden on the deck: that's an executive desktop, not
+            a chat app; threads start from the deck's command bar. */}
+        {view !== 'deck' && (
         <div className="px-4 pt-2">
           <button
             onClick={() => {
@@ -149,6 +151,7 @@ export function Sidebar({
             )}
           </div>
         </div>
+        )}
 
         {/* View switcher */}
         <div className="mx-4 mt-4 flex rounded-lg border border-sidebar-border bg-sidebar-accent/50 p-1">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Archive,
   Calendar,
@@ -6,23 +6,41 @@ import {
   Link2,
   Loader2,
   Mail,
+  Maximize2,
   Menu,
   MessageSquare,
   Newspaper,
   RefreshCw,
   RotateCcw,
   Sparkles,
+  X,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { VaultFile } from '@/lib/types'
 import { formatSize } from '@/lib/files'
+import { Markdown } from '@/components/MessageItem'
 
 /**
- * Mission Deck v3 — organized around what the executive must DO, not which
- * app the data lives in. Sections are intent-centric (needs response, needs
- * attention, in motion…) and their order + headlines are designed by the AI
- * from the user's own world ("Design my deck").
+ * Mission Deck v4 — an executive desktop, not a chat app. The dashboard owns
+ * the screen; the AI works in the background. A question asked from the
+ * command bar streams its answer into a compact strip just above it, and the
+ * AI's proposed next moves land on the dashboard as one-tap action cards.
+ * No message list, no "thinking" chrome — the reasoning stays backstage.
  */
+
+/** The live Q&A docked above the command bar. */
+export interface DeckExchange {
+  question: string
+  answer: string
+  streaming: boolean
+  error?: string
+}
+
+interface DeckAction {
+  title: string
+  prompt: string
+}
 
 interface DeckSections {
   gmail?: { from?: string; subject?: string; date?: string; snippet?: string }[] | { error: string }
@@ -188,12 +206,15 @@ export function DeckView({
   conversations,
   briefsUnread,
   memories,
+  exchange,
   onOpenVault,
   onAsk,
   onOpenSettings,
   onOpenSidebar,
   onContinueChat,
   onOpenBriefs,
+  onOpenThread,
+  onDismissExchange,
 }: {
   hosted: boolean
   userName?: string | null
@@ -202,19 +223,61 @@ export function DeckView({
   conversations: { id: string; title: string; updatedAt: number }[]
   briefsUnread: number
   memories: string[]
+  exchange: DeckExchange | null
   onOpenVault: () => void
   onAsk: (prompt: string) => void
   onOpenSettings: () => void
   onOpenSidebar: () => void
   onContinueChat: (id: string) => void
   onOpenBriefs: () => void
+  onOpenThread: () => void
+  onDismissExchange: () => void
 }) {
   const [sections, setSections] = useState<DeckSections>({})
   const [loading, setLoading] = useState(false)
   const [layout, setLayout] = useState<LayoutSection[]>(loadLayout)
   const [designing, setDesigning] = useState(false)
+  /** AI-proposed next moves for the current exchange, shown on the dash. */
+  const [moves, setMoves] = useState<DeckAction[]>([])
+  const movesFor = useRef<string | null>(null)
+  const prevStreaming = useRef(false)
+  const exchangeRef = useRef<DeckExchange | null>(null)
+  exchangeRef.current = exchange
 
   const has = (p: string) => connections.some((c) => c.provider === p)
+
+  // New question → clear last round's moves.
+  useEffect(() => {
+    setMoves([])
+    movesFor.current = null
+  }, [exchange?.question])
+
+  // When the answer finishes streaming, ask the AI what the next moves are.
+  useEffect(() => {
+    const was = prevStreaming.current
+    const now = Boolean(exchange?.streaming)
+    prevStreaming.current = now
+    if (!was || now) return
+    const ex = exchangeRef.current
+    if (!ex || !ex.answer.trim() || ex.error || movesFor.current === ex.question) return
+    movesFor.current = ex.question
+    fetch('/api/hosted/deck-actions', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: ex.question,
+        answer: ex.answer,
+        connections: connections.map((c) => c.provider),
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (Array.isArray(j?.actions)) setMoves(j.actions as DeckAction[])
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exchange?.streaming])
 
   const refresh = () => {
     if (!hosted || connections.length === 0) return
@@ -527,17 +590,116 @@ export function DeckView({
             </button>
           </div>
 
+          {moves.length > 0 && (
+            <div className="mt-5">
+              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <Zap size={12} className="text-primary" />
+                Your moves
+              </p>
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                {moves.map((m, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onAsk(m.prompt)}
+                    className="group flex items-center gap-3 rounded-2xl border border-primary/25 bg-primary/5 px-4 py-3.5 text-left shadow-sm transition-colors hover:border-primary/50 hover:bg-primary/10"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                      <Zap size={14} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                      {m.title}
+                    </span>
+                    <ChevronRight
+                      size={14}
+                      className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-5 space-y-4">{layout.map(renderSection)}</div>
         </div>
       </div>
 
-      <DeckComposer onAsk={onAsk} />
+      {exchange && (
+        <AnswerStrip
+          exchange={exchange}
+          onOpenThread={onOpenThread}
+          onDismiss={onDismissExchange}
+        />
+      )}
+      <DeckComposer onAsk={onAsk} compact={Boolean(exchange)} />
     </div>
   )
 }
 
-/** The chat box docked at the bottom of the deck — the executive's direct line. */
-function DeckComposer({ onAsk }: { onAsk: (prompt: string) => void }) {
+/**
+ * The answer dock — a compact strip above the command bar. The AI works in
+ * the background: no "thinking" labels, no status chrome, just a hairline
+ * pulse until the first words land. The full thread is one tap away.
+ */
+function AnswerStrip({
+  exchange,
+  onOpenThread,
+  onDismiss,
+}: {
+  exchange: DeckExchange
+  onOpenThread: () => void
+  onDismiss: () => void
+}) {
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  // Keep the newest tokens in view while the answer streams in.
+  useEffect(() => {
+    const el = bodyRef.current
+    if (el && exchange.streaming) el.scrollTop = el.scrollHeight
+  }, [exchange.answer, exchange.streaming])
+
+  return (
+    <div className="border-t border-border bg-card/40 px-4 pt-2.5 md:px-6">
+      <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-lg">
+        {exchange.streaming && !exchange.answer && !exchange.error && (
+          <div className="h-0.5 w-full animate-pulse bg-primary/60" />
+        )}
+        <div className="flex items-center gap-2 px-4 pt-2.5">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground/70">You · </span>
+            {exchange.question}
+          </span>
+          <button
+            onClick={onOpenThread}
+            className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Open the full thread"
+          >
+            <Maximize2 size={11} />
+            Thread
+          </button>
+          <button
+            onClick={onDismiss}
+            className="shrink-0 rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Dismiss"
+          >
+            <X size={13} />
+          </button>
+        </div>
+        <div
+          ref={bodyRef}
+          className="max-h-[28vh] overflow-y-auto px-4 pb-3 pt-1 text-[13px] leading-relaxed [&_p]:my-1.5 [&_li]:my-0.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_pre]:text-[11.5px]"
+        >
+          {exchange.error ? (
+            <p className="py-1 text-[12.5px] text-destructive">{exchange.error}</p>
+          ) : exchange.answer ? (
+            <Markdown text={exchange.answer} dark />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The command bar docked at the bottom — small, single-line, always there. */
+function DeckComposer({ onAsk, compact }: { onAsk: (prompt: string) => void; compact: boolean }) {
   const [text, setText] = useState('')
   const submit = () => {
     const t = text.trim()
@@ -546,34 +708,30 @@ function DeckComposer({ onAsk }: { onAsk: (prompt: string) => void }) {
     onAsk(t)
   }
   return (
-    <div className="border-t border-border bg-background/80 backdrop-blur">
-      <div className="mx-auto w-full max-w-4xl px-4 py-3 md:px-6">
-        <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-lg focus-within:border-primary/50">
-          <textarea
+    <div className={`bg-background/80 backdrop-blur ${compact ? '' : 'border-t border-border'}`}>
+      <div className="mx-auto w-full max-w-4xl px-4 py-2.5 md:px-6">
+        <div className="flex items-center gap-2 rounded-full border border-border bg-card py-1 pl-4 pr-1 shadow-lg focus-within:border-primary/50">
+          <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === 'Enter') {
                 e.preventDefault()
                 submit()
               }
             }}
-            rows={1}
             placeholder="Direct your day — ask, delegate, decide…"
-            className="max-h-32 min-h-9 w-full resize-none bg-transparent py-1.5 text-[14px] outline-none placeholder:text-muted-foreground/60"
+            className="h-8 w-full bg-transparent text-[13.5px] outline-none placeholder:text-muted-foreground/60"
           />
           <button
             onClick={submit}
             disabled={!text.trim()}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-30"
-            title="Send — the answer lands in Chat"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-30"
+            title="Send — the answer docks right above"
           >
-            <ChevronRight size={17} />
+            <ChevronRight size={16} />
           </button>
         </div>
-        <p className="mt-1.5 text-center text-[10.5px] text-muted-foreground/60">
-          Enter to send — replies stream in the Chat tab. Voice mode lives there too.
-        </p>
       </div>
     </div>
   )
