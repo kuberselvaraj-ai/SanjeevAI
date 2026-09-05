@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, Eye, EyeOff, ExternalLink, Brain, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { X, Eye, EyeOff, ExternalLink, Brain, Trash2, Link2, Unlink, Mail } from 'lucide-react'
 import type { Settings } from '@/lib/types'
 import { CHAT_MODELS, toKimiModels } from '@/lib/models'
 import { loadMemories, saveMemories } from '@/lib/memory'
@@ -50,6 +50,82 @@ function SecretField({
         {helpText}
         <ExternalLink size={11} />
       </a>
+    </div>
+  )
+}
+
+/** Linked accounts — Gmail, Calendar, and more to come. Hosted mode only. */
+function ConnectionsSection() {
+  const [status, setStatus] = useState<{
+    configured: { google: boolean }
+    connections: { provider: string; label?: string | null }[]
+  } | null>(null)
+
+  const refresh = () => {
+    fetch('/api/connect/status', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setStatus(j))
+      .catch(() => {})
+  }
+  useEffect(refresh, [])
+
+  const google = status?.connections.find((c) => c.provider === 'google')
+
+  return (
+    <div className="rounded-lg border border-border">
+      <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] font-medium">
+        <Link2 size={14} className="text-primary" />
+        Connections
+        <span className="text-xs font-normal text-muted-foreground">
+          — accounts Sanjeev AI can act on
+        </span>
+      </div>
+      <div className="flex items-center gap-3 border-t border-border px-3 py-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Mail size={15} className="text-primary" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-medium">Google — Gmail & Calendar</span>
+          <span className="block truncate text-[11.5px] text-muted-foreground">
+            {google
+              ? `Connected as ${google.label ?? 'your Google account'}`
+              : status?.configured.google
+                ? 'Read & draft email, check your schedule — by chat or voice'
+                : 'Not configured on this server yet'}
+          </span>
+        </span>
+        {google ? (
+          <button
+            onClick={async () => {
+              await fetch('/api/connect/disconnect', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: 'google' }),
+              }).catch(() => {})
+              refresh()
+            }}
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:border-destructive/40 hover:text-destructive"
+          >
+            <Unlink size={12} />
+            Disconnect
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              window.location.href = '/api/connect/google/start'
+            }}
+            disabled={!status?.configured.google}
+            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"
+          >
+            Connect
+          </button>
+        )}
+      </div>
+      <p className="border-t border-border px-3 py-2 text-[10.5px] leading-4 text-muted-foreground/70">
+        Tokens stay encrypted on the server. Drafts always need your explicit “send it” before
+        anything goes out.
+      </p>
     </div>
   )
 }
@@ -326,6 +402,9 @@ export function SettingsDialog({
               className="mt-0.5 shrink-0"
             />
           </div>
+
+          {/* Connections — linked accounts the agent can act on (hosted) */}
+          {hosted && <ConnectionsSection />}
 
           {/* Memory — works in both desktop and hosted mode */}
           <div className="rounded-lg border border-border">

@@ -137,3 +137,30 @@ export const scheduleRuns = mysqlTable("schedule_runs", {
 
 export type ScheduleRun = typeof scheduleRuns.$inferSelect;
 export type InsertScheduleRun = typeof scheduleRuns.$inferInsert;
+
+/**
+ * Connected third-party accounts (Google, Slack, Salesforce…).
+ * Tokens are AES-256-GCM encrypted at rest (api/lib/connectCrypto.ts) —
+ * never store plaintext here.
+ */
+export const connections = mysqlTable("connections", {
+  id: serial("id").primaryKey(),
+  userId: bigint("userId", { mode: "number", unsigned: true })
+    .notNull()
+    .references(() => users.id),
+  provider: varchar("provider", { length: 32 }).notNull(), // 'google' | 'slack' | 'salesforce'
+  /** account label, e.g. the connected Gmail address */
+  label: varchar("label", { length: 320 }),
+  scopes: text("scopes"),
+  accessTokenEnc: text("accessTokenEnc").notNull(),
+  refreshTokenEnc: text("refreshTokenEnc"),
+  expiresAt: timestamp("expiresAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+export type Connection = typeof connections.$inferSelect;
+export type InsertConnection = typeof connections.$inferInsert;

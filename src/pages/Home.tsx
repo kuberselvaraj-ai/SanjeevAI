@@ -27,6 +27,13 @@ import {
   systemPromptFor,
   type PremiumAvailability,
 } from '@/lib/route'
+import {
+  CONNECTOR_SYSTEM_HINT,
+  CONNECTOR_TOOL_NAMES,
+  CONNECTOR_TOOLS,
+  executeConnectorTool,
+  needsConnectorTools,
+} from '@/lib/connect'
 import { streamOpenRouter } from '@/lib/openrouter'
 import { streamAnthropic } from '@/lib/anthropic'
 import { streamOpenAi } from '@/lib/openai'
@@ -93,6 +100,33 @@ export default function Home() {
   /** hands-free voice loop: talk → transcribe → send → spoken reply */
   const [voiceMode, setVoiceMode] = useState(false)
   const [speaking, setSpeaking] = useState(false)
+  /** linked third-party accounts (Google, …) — enables connector tools */
+  const [connections, setConnections] = useState<{ provider: string; label?: string | null }[]>([])
+  const refreshConnections = useCallback(async () => {
+    if (!hosted) return
+    try {
+      const r = await fetch('/api/connect/status', { credentials: 'include' })
+      const j = r.ok ? await r.json() : null
+      if (j) setConnections(j.connections ?? [])
+    } catch {
+      /* offline / unconfigured — connectors stay off */
+    }
+  }, [hosted])
+  useEffect(() => {
+    if (user) refreshConnections()
+  }, [user, refreshConnections])
+
+  // OAuth return: /#/?connect=google → toast + status refresh.
+  useEffect(() => {
+    const m = window.location.hash.match(/[?&]connect=(\w+)/)
+    if (!m) return
+    if (m[1] === 'error') toast.error('Connection failed — try again from Settings.')
+    else {
+      toast.success(`Connected ${m[1] === 'google' ? 'Google (Gmail + Calendar)' : m[1]}.`)
+      refreshConnections()
+    }
+    window.location.hash = window.location.hash.replace(/[?&]connect=\w+/, '')
+  }, [refreshConnections])
   const toggleVoiceMode = useCallback(() => {
     setVoiceMode((v) => {
       if (v) {
@@ -288,7 +322,7 @@ export default function Home() {
   /** Convert stored messages into the API payload: document extracts become
    *  system context, images become vision parts on their user message. */
   const buildApiMessages = useCallback(
-    (conv: Conversation, messages: ChatMessage[], model: string, agentTools = false): ApiMessage[] => {
+    (conv: Conversation, messages: ChatMessage[], model: string, agentTools = false, connectorTools = false): ApiMessage[] => {
       const now = new Date()
       const timeLine = `Current date and time: ${now.toLocaleString()} (timezone: ${
         Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -297,10 +331,11 @@ export default function Home() {
       const memory = memoryContext()
       const research = settings.deepResearch ? `\n\n${RESEARCH_PROMPT}` : ''
       const agent = agentTools ? `\n\n${AGENT_SYSTEM_HINT}` : ''
+      const connector = connectorTools ? `\n\n${CONNECTOR_SYSTEM_HINT}` : ''
       const out: ApiMessage[] = [
         {
           role: 'system',
-          content: `${systemPromptFor(model, conv.systemPrompt)}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}${agent}\n\n${timeLine}`,
+          content: `${systemPromptFor(model, conv.systemPrompt)}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}${agent}${connector}\n\n${timeLine}`,
         },
       ]
       for (const m of messages) {
@@ -360,10 +395,17 @@ export default function Home() {
       // specialist toolbox — and in Auto mode always goes to the
       // orchestrator brain (Kimi K3, our strongest agent model).
       const wantsPipeline = needsAgentTools(lastUser?.content ?? '')
+      // Connector intents (email / calendar) also go to the orchestrator
+      // brain — tool calling runs on Kimi models.
+      const wantsConnectors =
+        hosted &&
+        connections.some((cn) => cn.provider === 'google') &&
+        needsConnectorTools(lastUser?.content ?? '')
       const route = resolveChatModel(conv.model, lastUser?.content ?? '', hasImages, premium)
       let resolved = route.model
-      if (wantsPipeline && conv.model === AUTO_MODEL) resolved = 'kimi-k3'
+      if ((wantsPipeline || wantsConnectors) && conv.model === AUTO_MODEL) resolved = 'kimi-k3'
       const agentRequested = wantsPipeline && !isPremiumModel(resolved)
+      const connectorActive = wantsConnectors && !isPremiumModel(resolved)
       const resolvedAvailable = resolved.startsWith('anthropic/')
         ? premium.claude
         : resolved.startsWith('openai/')
@@ -398,7 +440,7 @@ export default function Home() {
         }))
       }
 
-      const apiMessages = buildApiMessages(conv, baseMessages, resolved, agentRequested)
+      const apiMessages = buildApiMessages(conv, baseMessages, resolved, agentRequested, connectorActive)
       // Context diet: stale documents and ancient mega-replies are trimmed
       // before anything is sent — for every model, not just premium ones.
       const slim = slimHistory(apiMessages)
@@ -564,10 +606,21 @@ export default function Home() {
 
       // Specialist toolbox: model calls run_python / generate_image mid-stream,
       // we execute them and feed results back; artifacts embed into the reply.
-      const agent = agentRequested
+      // Connector tools (Gmail / Calendar) join the box when linked + asked.
+      const agent =
+        agentRequested || connectorActive
         ? {
-            tools: AGENT_TOOLS,
+            tools: [
+              ...(agentRequested ? AGENT_TOOLS : []),
+              ...(connectorActive ? CONNECTOR_TOOLS : []),
+            ],
             execute: async (call: ToolCall) => {
+              if (CONNECTOR_TOOL_NAMES.has(call.function.name)) {
+                callbacks.onStatus?.('Working with Google…')
+                const result = await executeConnectorTool(call)
+                callbacks.onStatus?.(null)
+                return result
+              }
               const { result, artifact } = await executeAgentTool(call, {
                 settings,
                 hosted,
@@ -638,7 +691,7 @@ export default function Home() {
         )
       }
     },
-    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation, voiceMode],
+    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation, voiceMode, connections],
   )
 
   const stop = useCallback(() => {

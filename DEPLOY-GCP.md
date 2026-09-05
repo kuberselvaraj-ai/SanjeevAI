@@ -128,3 +128,48 @@ gcloud run deploy sanjeevai --image gcr.io/<YOUR_PROJECT>/sanjeevai --region us-
 - New models: update `EXTRA_MODELS` on the service and redeploy — no code change.
 - Cloud SQL free advice: if XYeed's instance is production, a separate small
   instance (~$7–10/mo) keeps the two apps isolated.
+
+## Google connector (Gmail + Calendar voice/chat commands)
+
+One-time setup so users can say "check my email / what's on my calendar":
+
+1. Google Cloud Console → APIs & Services → enable **Gmail API** and
+   **Google Calendar API** (project xyeed-503223).
+2. APIs & Services → OAuth consent screen → External → fill app name
+   "Sanjeev AI", your email. Add scopes: gmail.readonly, gmail.compose,
+   gmail.send, calendar.readonly. (Unverified apps work with a warning
+   screen while in testing; publish/verify later for the public.)
+3. APIs & Services → Credentials → Create Credentials → **OAuth client ID**
+   → Web application. Authorized redirect URI:
+   `https://sanjeevai-796272357891.us-central1.run.app/api/connect/google/callback`
+   (add `https://sanjeevai.com/api/connect/google/callback` once the domain
+   is mapped).
+4. Set the credentials on the service:
+
+```bash
+gcloud run services update sanjeevai --region us-central1 \
+  --update-env-vars "GOOGLE_CLIENT_ID=<client-id>,GOOGLE_CLIENT_SECRET=<client-secret>"
+```
+
+5. Create the connections table (once per database):
+
+```bash
+cloud-sql-proxy xyeed-503223:us-central1:xyeed-db --port 3307 &
+mysql -h 127.0.0.1 -P 3307 -u sanjeevai -p sanjeevai -e "
+CREATE TABLE IF NOT EXISTS connections (
+  id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  userId bigint unsigned NOT NULL,
+  provider varchar(32) NOT NULL,
+  label varchar(320),
+  scopes text,
+  accessTokenEnc text NOT NULL,
+  refreshTokenEnc text,
+  expiresAt timestamp NULL,
+  createdAt timestamp NOT NULL DEFAULT now(),
+  updatedAt timestamp NOT NULL DEFAULT now(),
+  CONSTRAINT connections_user FOREIGN KEY (userId) REFERENCES users(id)
+);"
+```
+
+Users then connect via Settings → Connections → Google. Tokens are
+AES-256-GCM encrypted at rest; sends always require explicit user approval.
