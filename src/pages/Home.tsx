@@ -52,6 +52,12 @@ import { styleInstruction } from '@/lib/styles'
 import { RESEARCH_PROMPT } from '@/lib/research'
 import { loadMemories, memoryContext } from '@/lib/memory'
 import { estimateMessagesTokens, slimHistory } from '@/lib/contextBudget'
+import {
+  compressionBlock,
+  digestPatchFor,
+  recallBlock,
+  uncompressedMessages,
+} from '@/lib/chatDigest'
 import { trpc } from '@/providers/trpc'
 import { useAuth } from '@/hooks/useAuth'
 import { Sidebar, type View } from '@/components/Sidebar'
@@ -309,6 +315,40 @@ export default function Home() {
     setConversations((prev) => prev.map((c) => (c.id === id ? fn(c) : c)))
   }, [])
 
+  // Always-current mirror of conversations for background work (digest
+  // refresh, cross-chat recall) that must not depend on stale closures.
+  const conversationsRef = useRef(conversations)
+  useEffect(() => {
+    conversationsRef.current = conversations
+  }, [conversations])
+
+  // ── Internal labeling: fold aged turns into the rolling digest ────────
+  // Runs AFTER a reply completes, never on the critical path; one flight
+  // per conversation. The digest is what future turns replay instead of
+  // raw history — this is what keeps token spend flat as threads grow.
+  const digestInFlight = useRef<Set<string>>(new Set())
+  const scheduleDigest = useCallback(
+    (convId: string) => {
+      if (digestInFlight.current.has(convId)) return
+      digestInFlight.current.add(convId)
+      // Defer so the finalizing state update (streaming: false) has landed
+      // in conversationsRef before we read the transcript.
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const conv = conversationsRef.current.find((c) => c.id === convId)
+            if (!conv || conv.temp) return
+            const patch = await digestPatchFor(conv, settings, hosted)
+            if (patch) updateConversation(convId, (c) => ({ ...c, ...patch }))
+          } finally {
+            digestInFlight.current.delete(convId)
+          }
+        })()
+      }, 250)
+    },
+    [settings, hosted, updateConversation],
+  )
+
   // ----- chat actions -----
   // Unread scheduled-brief runs — red bubble on the Briefs tab (hosted only).
   const briefsUnreadQuery = trpc.schedules.unreadCount.useQuery(undefined, {
@@ -454,7 +494,19 @@ export default function Home() {
           content: `${systemPromptFor(model, conv.systemPrompt)}${style ? `\n\n${style}` : ''}${memory ? `\n\n${memory}` : ''}${research}${agent}${connector}\n\n${timeLine}`,
         },
       ]
-      for (const m of messages) {
+      // Rolling compression: aged turns travel as their digest, not raw.
+      const compression = compressionBlock(conv)
+      if (compression) out.push({ role: 'system', content: compression })
+      // Cross-chat recall: only the top-scoring digests from other threads,
+      // scored locally (zero tokens), capped tiny — memory without the bill.
+      const lastUserText = [...messages]
+        .reverse()
+        .find((m) => m.role === 'user' && typeof m.content === 'string' && m.content.trim())
+      const recall = lastUserText
+        ? recallBlock(lastUserText.content as string, conversationsRef.current, conv.id)
+        : ''
+      if (recall) out.push({ role: 'system', content: recall })
+      for (const m of uncompressedMessages(conv, messages)) {
         if (m.error) continue
         const docs = (m.attachments ?? []).filter(
           (a) => a.kind === 'doc' && a.status === 'ready' && a.extractedText,
@@ -584,6 +636,8 @@ export default function Home() {
         }))
         setStreaming(false)
         if (hosted) trpcUtils.usage.mine.invalidate()
+        // Background: fold aged turns into the rolling digest (labeling).
+        scheduleDigest(convId)
         // Voice mode: the finished reply is read aloud automatically.
         if (voiceMode && contentMirror.trim() && voiceAvailable(settings, hosted)) {
           setSpeaking(true)
@@ -648,6 +702,7 @@ export default function Home() {
             }))
             setStreaming(false)
             if (hosted) trpcUtils.usage.mine.invalidate()
+            scheduleDigest(convId)
           },
           onError: () => {
             // Keep the draft — it is already a complete, valid answer.
@@ -805,7 +860,7 @@ export default function Home() {
         )
       }
     },
-    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation, voiceMode, connections],
+    [buildApiMessages, caps, hosted, settings, trpcUtils, updateConversation, voiceMode, connections, scheduleDigest],
   )
 
   const stop = useCallback(() => {
@@ -824,13 +879,13 @@ export default function Home() {
   )
 
   const send = useCallback(
-    async (text: string, files: File[] = []) => {
+    async (text: string, files: File[] = [], opts?: { freshThread?: boolean }) => {
       if (desktop && !settings.moonshotKey) {
         setSettingsOpen(true)
         return
       }
       if (hosted && !user) return // auth hook redirects to /login
-      let convId = activeId
+      let convId = opts?.freshThread ? null : activeId
       if (!convId || !conversations.some((c) => c.id === convId)) {
         const conv: Conversation = {
           id: uid(),
@@ -1101,16 +1156,17 @@ export default function Home() {
 
   // ── Deck command bar ───────────────────────────────────────────────────
   // Asking from the deck must NOT jump into the chat screen: the deck is the
-  // executive's desktop, and the AI works in the background. We fire send()
-  // (which routes, streams, and runs tools as usual), then pin the exchange
-  // to the conversation it landed in so the deck's answer dock can mirror it.
+  // executive's desktop, and the AI works in the background. Each directive
+  // is its own task, so it always opens a FRESH thread — the recall layer
+  // (digest matching) is what connects it to related earlier work, rather
+  // than silently polluting whatever thread happened to be active.
   const [deckQuestion, setDeckQuestion] = useState<string | null>(null)
   const [deckFocus, setDeckFocus] = useState<{ convId: string; question: string } | null>(null)
 
   const deckAsk = useCallback(
     (prompt: string) => {
       setDeckQuestion(prompt)
-      send(prompt)
+      send(prompt, [], { freshThread: true })
     },
     [send],
   )
@@ -1370,7 +1426,7 @@ export default function Home() {
             .slice()
             .sort((a, b) => b.updatedAt - a.updatedAt)
             .slice(0, 8)
-            .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))}
+            .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt, labels: c.digestLabels ?? [] }))}
           briefsUnread={briefsUnreadQuery.data ?? 0}
           memories={loadMemories()}
           exchange={deckExchange}

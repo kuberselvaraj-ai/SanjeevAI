@@ -47,6 +47,18 @@ export interface Conversation {
   temp?: boolean
   /** response style preset id (see lib/styles.ts) */
   style?: string
+  /**
+   * Internal AI labeling — a rolling digest of the conversation's older
+   * messages, generated in the background. Powers context compression
+   * (old turns collapse into this summary) and cross-chat recall. Not a
+   * user-facing organization system; labels surface only as subtle chips.
+   */
+  digest?: string
+  digestLabels?: string[]
+  /** unresolved questions / next steps the AI still owes the user */
+  openLoops?: string[]
+  /** compression watermark: id of the last message folded into the digest */
+  digestThrough?: string
 }
 
 /** One entry inside an anchored comment thread (the first entry is the comment itself). */

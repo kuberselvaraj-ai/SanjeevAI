@@ -219,6 +219,75 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     return c.json({ ok: true, actions });
   });
 
+  // ── Chat digest: internal labeling + rolling compression ───────────────
+  // Given a transcript window (and optionally the previous digest), produce
+  // a compact {summary, labels, openLoops} triple. The client stores it on
+  // the conversation and replays IT — instead of raw history — whenever old
+  // context is needed, which is what keeps token spend flat as threads grow.
+  app.post("/api/hosted/chat-digest", async (c) => {
+    let user;
+    try {
+      user = await authenticateRequest(c.req.raw.headers);
+    } catch {
+      return c.json({ error: "Please sign in first." }, 401);
+    }
+    if (!moonshotKey()) {
+      return c.json({ error: "Chat is not configured on this server." }, 503);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      messages?: { role?: string; content?: string }[];
+      priorDigest?: string;
+    };
+    const window = (body.messages ?? [])
+      .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .slice(-40)
+      .map((m) => ({ role: m.role as string, content: String(m.content).slice(0, 900) }));
+    if (window.length === 0) {
+      return c.json({ ok: true, digest: { summary: "", labels: [], openLoops: [] } });
+    }
+    const raw = await chatComplete({
+      model: "kimi-k3",
+      temperature: 0.3,
+      maxTokens: 3000,
+      messages: [
+        {
+          role: "system",
+          content: `You maintain the internal memory of an executive AI console. Compress the given conversation window into a compact digest. Reply with ONLY JSON: {"summary":"…","labels":["…"],"openLoops":["…"]}. summary: 2-3 sentences (≤90 words) capturing what the user wanted, what was decided or produced, and any facts worth keeping (names, numbers, deadlines) — written so a future AI can use it INSTEAD of the raw messages. labels: 3-6 lowercase topic tags, 1-2 words each (e.g. "board prep", "fundraising", "hiring"). openLoops: 0-3 unresolved questions or promised next steps, short phrases; [] if none. If a prior digest is provided, fold its still-relevant content into the new summary — never repeat or contradict it. Internal metadata, so be dense and factual, never conversational.`,
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            priorDigest: String(body.priorDigest ?? "").slice(0, 800) || undefined,
+            window,
+          }),
+        },
+      ],
+    }).catch(() => "");
+    let digest = { summary: "", labels: [] as string[], openLoops: [] as string[] };
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(match?.[0] ?? "") as {
+        summary?: string;
+        labels?: string[];
+        openLoops?: string[];
+      };
+      digest = {
+        summary: String(parsed.summary ?? "").trim().slice(0, 700),
+        labels: (parsed.labels ?? [])
+          .map((l) => String(l).trim().toLowerCase().slice(0, 30))
+          .filter(Boolean)
+          .slice(0, 6),
+        openLoops: (parsed.openLoops ?? [])
+          .map((l) => String(l).trim().slice(0, 140))
+          .filter(Boolean)
+          .slice(0, 3),
+      };
+    } catch {
+      /* fall through with the empty digest */
+    }
+    return c.json({ ok: true, digest });
+  });
+
   // ── Streaming chat relay with per-user token metering ──────────────────
   app.post("/api/hosted/chat", async (c) => {
     let user;

@@ -220,7 +220,7 @@ export function DeckView({
   userName?: string | null
   connections: { provider: string; label?: string | null }[]
   vault: VaultFile[]
-  conversations: { id: string; title: string; updatedAt: number }[]
+  conversations: { id: string; title: string; updatedAt: number; labels?: string[] }[]
   briefsUnread: number
   memories: string[]
   exchange: DeckExchange | null
@@ -315,7 +315,9 @@ export function DeckView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           memories,
-          recentChats: conversations.map((c) => c.title).filter(Boolean),
+          recentChats: conversations
+            .map((c) => (c.labels?.length ? `${c.title} [${c.labels.join(', ')}]` : c.title))
+            .filter(Boolean),
           connections: connections.map((c) => c.provider),
           counts: {
             unreadEmail: unread,

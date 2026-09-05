@@ -182,6 +182,20 @@ export function ChatView({
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
           {empty ? 'New conversation' : conversation?.title}
         </h2>
+        {/* Internal labels — what the AI filed this thread under; they drive
+            compression and cross-chat recall behind the scenes. */}
+        {!empty && (conversation?.digestLabels?.length ?? 0) > 0 && (
+          <span className="hidden shrink-0 items-center gap-1 lg:flex" title="Internal labels — how the AI files and recalls this thread">
+            {conversation!.digestLabels!.slice(0, 4).map((l) => (
+              <span
+                key={l}
+                className="rounded-full border border-border px-2 py-0.5 text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground/70"
+              >
+                {l}
+              </span>
+            ))}
+          </span>
+        )}
         {conversation?.temp && (
           <span className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-primary/50 px-2 py-0.5 text-[10.5px] font-medium text-primary">
             <Ghost size={11} />
