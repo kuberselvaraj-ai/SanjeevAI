@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import type { HttpBindings } from "@hono/node-server";
 import { and, eq } from "drizzle-orm";
 import * as schema from "@db/schema";
 import { authenticateRequest } from "./kimi/auth";
@@ -237,7 +238,7 @@ async function calendarUpcoming(userId: number, args: { days?: number; max?: num
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 
-export function registerConnectRoutes(app: Hono) {
+export function registerConnectRoutes(app: Hono<{ Bindings: HttpBindings }>) {
   // Start OAuth — redirect to Google consent.
   app.get("/api/connect/google/start", async (c) => {
     let user;

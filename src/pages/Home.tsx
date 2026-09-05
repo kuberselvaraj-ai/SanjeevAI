@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { KeyRound } from 'lucide-react'
-import type { AnchorComment, Attachment, ChatMessage, Conversation, ImageJob, Settings, VaultFile, VideoJob } from '@/lib/types'
+import type { AnchorComment, Attachment, ChatMessage, Conversation, ImageJob, Settings, VaultFile, VaultFolder, VideoJob } from '@/lib/types'
+import { runCodeDirect, type CodeRunResult } from '@/lib/code'
 import { store, uid } from '@/lib/storage'
 import { streamChat, type ApiMessage, type MessagePart, type ToolCall } from '@/lib/kimi'
 import {
@@ -16,7 +17,17 @@ import {
 } from '@/lib/agent'
 import { pollVideoTask } from '@/lib/video'
 import { processFile } from '@/lib/files'
-import { findVaultByHash, hashFile, listVaultFiles, putVaultFile, deleteVaultFile, vaultEntryFrom } from '@/lib/vault'
+import { autoTags, findVaultByHash, hashFile, listVaultFiles, putVaultFile, deleteVaultFile, vaultEntryFrom } from '@/lib/vault'
+import {
+  cloudVaultCheckHash,
+  cloudVaultCreateFolder,
+  cloudVaultDelete,
+  cloudVaultDeleteFolder,
+  cloudVaultPatch,
+  cloudVaultPayload,
+  cloudVaultTree,
+  cloudVaultUpload,
+} from '@/lib/vaultCloud'
 import { VaultDialog } from '@/components/VaultDialog'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
 import { isDesktop } from '@/lib/desktop'
@@ -93,6 +104,7 @@ export default function Home() {
   const [images, setImages] = useState<ImageJob[]>(() => store.loadImages())
   const [comments, setComments] = useState<AnchorComment[]>(() => store.loadComments())
   const [vault, setVault] = useState<VaultFile[]>([])
+  const [vaultFolders, setVaultFolders] = useState<VaultFolder[]>([])
   const [vaultOpen, setVaultOpen] = useState(false)
   const [pendingVault, setPendingVault] = useState<VaultFile[]>([])
   /** last turn's context-meter reading (estimated tokens) */
@@ -141,12 +153,107 @@ export default function Home() {
     setSpeaking(false)
   }, [])
 
+  // Hosted: the vault lives in the cloud (same library on every device).
+  // Desktop: local IndexedDB vault.
   const refreshVault = useCallback(async () => {
-    setVault(await listVaultFiles())
-  }, [])
+    if (hosted) {
+      try {
+        const t = await cloudVaultTree()
+        setVault(t.files)
+        setVaultFolders(t.folders)
+      } catch {
+        /* unauthenticated / offline — vault stays empty */
+      }
+    } else {
+      setVault(await listVaultFiles())
+    }
+  }, [hosted])
   useEffect(() => {
-    refreshVault()
-  }, [refreshVault])
+    if (!hosted || user) refreshVault()
+  }, [refreshVault, hosted, user])
+
+  // Upload a file straight into the cloud vault (from the vault dialog).
+  const vaultUploadDirect = useCallback(
+    async (f: File, folderId: number | null) => {
+      if (f.size > 8 * 1024 * 1024) {
+        toast.error(`"${f.name}" is over the 8 MB cloud vault limit.`)
+        return
+      }
+      try {
+        const hash = await hashFile(f)
+        const kind = (f.type.startsWith('image/') ? 'image' : 'doc') as 'image' | 'doc'
+        const bytes = new Uint8Array(await f.arrayBuffer())
+        let bin = ''
+        for (let i = 0; i < bytes.length; i += 0x8000)
+          bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+        const textLike =
+          /^(text\/|application\/(json|xml))/.test(f.type) ||
+          /\.(md|txt|csv|json|log)$/i.test(f.name)
+        const extractedText = textLike ? (await f.text()).slice(0, 200_000) : undefined
+        await cloudVaultUpload({
+          name: f.name,
+          mimeType: f.type || 'application/octet-stream',
+          size: f.size,
+          hash,
+          kind,
+          folderId,
+          tags: autoTags(f.name, f.type, extractedText ?? ''),
+          payloadB64: btoa(bin),
+          extractedText,
+        })
+        toast.success(`"${f.name}" is in the cloud vault.`)
+        refreshVault()
+      } catch {
+        toast.error(`Could not upload "${f.name}".`)
+      }
+    },
+    [refreshVault],
+  )
+
+  // Pull a copy of a vault file down to this device.
+  const vaultDownload = useCallback(
+    async (f: VaultFile) => {
+      try {
+        let url: string
+        let name = f.name
+        let revoke = false
+        let payloadB64: string | null | undefined
+        let text: string | null | undefined
+        let mime = f.mimeType
+        if (hosted) {
+          const p = await cloudVaultPayload(f.id)
+          payloadB64 = p.payloadB64
+          text = p.extractedText
+          mime = p.mimeType || mime
+        } else {
+          payloadB64 = f.dataUrl?.split(',')[1]
+          text = f.extractedText
+        }
+        if (payloadB64) {
+          const bin = atob(payloadB64)
+          const bytes = new Uint8Array(bin.length)
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+          url = URL.createObjectURL(new Blob([bytes], { type: mime }))
+          revoke = true
+        } else if (text) {
+          url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+          name = f.name.replace(/\.[^.]+$/, '') + '.txt'
+          revoke = true
+        } else {
+          toast.error('No downloadable copy is stored for this file.')
+          return
+        }
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        a.click()
+        if (revoke) setTimeout(() => URL.revokeObjectURL(url), 5000)
+      } catch {
+        toast.error('Download failed.')
+      }
+    },
+    [hosted],
+  )
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -796,7 +903,32 @@ export default function Home() {
           files.map(async (f) => {
             // Dedupe: a file already in the vault skips upload + extraction entirely.
             const hash = await hashFile(f).catch(() => '')
-            const hit = hash ? await findVaultByHash(hash).catch(() => null) : null
+            if (hosted && hash) {
+              const meta = await cloudVaultCheckHash(hash).catch(() => null)
+              if (meta) {
+                const p = await cloudVaultPayload(meta.id).catch(() => null)
+                if (p && (p.payloadB64 || p.extractedText)) {
+                  return {
+                    hash,
+                    vaultId: meta.id,
+                    attachment: {
+                      id: uid(),
+                      name: p.name,
+                      mimeType: p.mimeType,
+                      size: meta.size,
+                      kind: meta.kind,
+                      dataUrl:
+                        meta.kind === 'image' && p.payloadB64
+                          ? `data:${p.mimeType};base64,${p.payloadB64}`
+                          : undefined,
+                      extractedText: p.extractedText ?? undefined,
+                      status: 'ready',
+                    } as Attachment,
+                  }
+                }
+              }
+            }
+            const hit = !hosted && hash ? await findVaultByHash(hash).catch(() => null) : null
             if (hit && (hit.dataUrl || hit.extractedText)) {
               usedVaultIds.add(hit.id)
               return {
@@ -815,18 +947,47 @@ export default function Home() {
               }
             }
             const attachment = hosted ? await processFileHosted(f) : await processFile(settings, f)
-            return { hash, vaultId: null as string | null, attachment }
+            return { hash, vaultId: null as string | null, attachment, file: f }
           }),
         )
         attachments = [...attachments, ...processed.map((p) => p.attachment)]
         // Register new files in the vault (non-blocking).
         for (const p of processed) {
           if (!p.vaultId && p.hash && p.attachment.status === 'ready') {
-            const entry = vaultEntryFrom(p.hash, p.attachment)
-            usedVaultIds.add(entry.id)
-            putVaultFile(entry)
-              .then(refreshVault)
-              .catch(() => {})
+            if (hosted) {
+              // Cloud vault: raw bytes (≤8 MB) + extracted text, deduped server-side.
+              const a = p.attachment
+              const payloadB64 =
+                a.kind === 'image'
+                  ? a.dataUrl?.split(',')[1]
+                  : p.file && p.file.size <= 8 * 1024 * 1024
+                    ? await p.file.arrayBuffer().then((buf) => {
+                        const bytes = new Uint8Array(buf)
+                        let bin = ''
+                        for (let i = 0; i < bytes.length; i += 0x8000)
+                          bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+                        return btoa(bin)
+                      })
+                    : undefined
+              cloudVaultUpload({
+                name: a.name,
+                mimeType: a.mimeType,
+                size: a.size,
+                hash: p.hash,
+                kind: a.kind,
+                tags: vaultEntryFrom(p.hash, a).tags,
+                payloadB64,
+                extractedText: a.extractedText,
+              })
+                .then(refreshVault)
+                .catch(() => {})
+            } else {
+              const entry = vaultEntryFrom(p.hash, p.attachment)
+              usedVaultIds.add(entry.id)
+              putVaultFile(entry)
+                .then(refreshVault)
+                .catch(() => {})
+            }
           }
         }
         updateConversation(id, (c) => ({
@@ -860,8 +1021,8 @@ export default function Home() {
         }
       }
 
-      // Record vault usage (non-blocking) and clear the composer picks.
-      if (usedVaultIds.size > 0) {
+      // Record vault usage (non-blocking, local vault only) and clear picks.
+      if (usedVaultIds.size > 0 && !hosted) {
         const useTitle = text.slice(0, 42) || attachments[0]?.name || 'Chat'
         const useAt = Date.now()
         setVault((prev) =>
@@ -1283,20 +1444,104 @@ export default function Home() {
       {vaultOpen && (
         <VaultDialog
           files={vault}
+          folders={hosted ? vaultFolders : []}
           onAttach={
             view === 'chat'
               ? (f) => {
-                  setPendingVault((prev) =>
-                    prev.some((p) => p.id === f.id) ? prev : [...prev, f],
-                  )
-                  setVaultOpen(false)
+                  if (!hosted) {
+                    setPendingVault((prev) =>
+                      prev.some((p) => p.id === f.id) ? prev : [...prev, f],
+                    )
+                    setVaultOpen(false)
+                    return
+                  }
+                  // Cloud vault: pull payload/text on demand, then attach —
+                  // the send path reuses them without re-upload or re-extraction.
+                  cloudVaultPayload(f.id)
+                    .then((p) => {
+                      setPendingVault((prev) =>
+                        prev.some((x) => x.id === f.id)
+                          ? prev
+                          : [
+                              ...prev,
+                              {
+                                ...f,
+                                dataUrl:
+                                  f.kind === 'image' && p.payloadB64
+                                    ? `data:${p.mimeType};base64,${p.payloadB64}`
+                                    : undefined,
+                                extractedText: p.extractedText ?? undefined,
+                              },
+                            ],
+                      )
+                      setVaultOpen(false)
+                    })
+                    .catch(() => toast.error('Could not load that file from the cloud vault.'))
                 }
               : undefined
           }
           onDelete={(id) => {
-            deleteVaultFile(id).catch(() => {})
+            if (hosted) cloudVaultDelete(id).catch(() => toast.error('Delete failed'))
+            else deleteVaultFile(id).catch(() => {})
             setVault((prev) => prev.filter((v) => v.id !== id))
             setPendingVault((prev) => prev.filter((v) => v.id !== id))
+          }}
+          onUpload={
+            hosted
+              ? (fs, folderId) => {
+                  for (const f of fs) void vaultUploadDirect(f, folderId)
+                }
+              : undefined
+          }
+          onCreateFolder={
+            hosted
+              ? (name) => {
+                  cloudVaultCreateFolder(name, null)
+                    .then(refreshVault)
+                    .catch(() => toast.error('Could not create the folder.'))
+                }
+              : undefined
+          }
+          onDeleteFolder={
+            hosted
+              ? (id) => {
+                  cloudVaultDeleteFolder(id)
+                    .then(refreshVault)
+                    .catch(() => toast.error('Could not delete the folder.'))
+                }
+              : undefined
+          }
+          onMove={
+            hosted
+              ? (id, folderId) => {
+                  setVault((prev) =>
+                    prev.map((v) => (v.id === id ? { ...v, folderId } : v)),
+                  )
+                  cloudVaultPatch(id, { folderId })
+                    .then(refreshVault)
+                    .catch(() => toast.error('Move failed.'))
+                }
+              : undefined
+          }
+          onDownload={(f) => void vaultDownload(f)}
+          onLoadText={
+            hosted
+              ? async (f) => (await cloudVaultPayload(f.id)).extractedText ?? ''
+              : async (f) => f.extractedText ?? ''
+          }
+          onSaveText={(f, text) => {
+            if (hosted) {
+              setVault((prev) =>
+                prev.map((v) => (v.id === f.id ? { ...v, hasText: Boolean(text) } : v)),
+              )
+              cloudVaultPatch(f.id, { extractedText: text })
+                .then(() => toast.success('Saved to the cloud vault.'))
+                .catch(() => toast.error('Save failed.'))
+            } else {
+              putVaultFile({ ...f, extractedText: text })
+                .then(refreshVault)
+                .catch(() => {})
+            }
           }}
           onClose={() => setVaultOpen(false)}
         />

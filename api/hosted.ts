@@ -368,7 +368,7 @@ export function registerHostedRoutes(app: Hono<{ Bindings: HttpBindings }>) {
     const text = body?.text?.slice(0, 4000);
     if (!text) return c.json({ error: "text is required" }, 400);
 
-    let audioBody: BodyInit;
+    let audioBody: ConstructorParameters<typeof Response>[0];
     let ttsModel: string;
     if (useEleven) {
       try {

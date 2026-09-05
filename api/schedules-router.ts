@@ -75,7 +75,7 @@ export const schedulesRouter = createRouter({
       title,
       prompt: input.prompt.trim(),
       ...draft,
-      nextRunAt: computeNextRun({ ...draft, weekday: draft.weekday ?? undefined }),
+      nextRunAt: computeNextRun({ ...draft, weekday: draft.weekday ?? null }),
     });
     return { id };
   }),

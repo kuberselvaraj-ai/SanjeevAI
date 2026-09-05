@@ -8,6 +8,7 @@ import { env } from "./lib/env";
 import { createOAuthCallbackHandler } from "./kimi/auth";
 import { registerHostedRoutes } from "./hosted";
 import { registerConnectRoutes } from "./connect";
+import { registerVaultRoutes } from "./vault";
 import { Paths } from "@contracts/constants";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
@@ -16,6 +17,7 @@ app.use(bodyLimit({ maxSize: 50 * 1024 * 1024 }));
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 registerHostedRoutes(app);
 registerConnectRoutes(app);
+registerVaultRoutes(app);
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",

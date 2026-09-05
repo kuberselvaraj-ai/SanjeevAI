@@ -164,3 +164,49 @@ export const connections = mysqlTable("connections", {
 
 export type Connection = typeof connections.$inferSelect;
 export type InsertConnection = typeof connections.$inferInsert;
+
+/**
+ * Cloud vault — the user's file library lives server-side so every screen
+ * (browser, TV, desktop) sees the same files. Payloads are base64 in
+ * longtext for v1 (≤10 MB per file); the API shape is storage-agnostic,
+ * so payloads can move to GCS later without client changes.
+ */
+export const vaultFolders = mysqlTable("vault_folders", {
+  id: serial("id").primaryKey(),
+  userId: bigint("userId", { mode: "number", unsigned: true })
+    .notNull()
+    .references(() => users.id),
+  name: varchar("name", { length: 120 }).notNull(),
+  parentId: bigint("parentId", { mode: "number", unsigned: true }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type VaultFolderRow = typeof vaultFolders.$inferSelect;
+
+export const vaultFiles = mysqlTable("vault_files", {
+  id: serial("id").primaryKey(),
+  userId: bigint("userId", { mode: "number", unsigned: true })
+    .notNull()
+    .references(() => users.id),
+  folderId: bigint("folderId", { mode: "number", unsigned: true }),
+  name: varchar("name", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 120 }).notNull(),
+  size: int("size").notNull(),
+  /** sha-256 of the original bytes — per-user dedupe key */
+  hash: varchar("hash", { length: 64 }).notNull(),
+  kind: mysqlEnum("kind", ["image", "doc"]).notNull(),
+  /** base64 of the (downscaled) file — the downloadable original */
+  payload: longtext("payload"),
+  /** extracted text — instant re-attach, zero re-extraction */
+  extractedText: longtext("extractedText"),
+  /** comma-separated tags */
+  tags: varchar("tags", { length: 500 }).default("").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+export type VaultFileRow = typeof vaultFiles.$inferSelect;
+export type InsertVaultFile = typeof vaultFiles.$inferInsert;

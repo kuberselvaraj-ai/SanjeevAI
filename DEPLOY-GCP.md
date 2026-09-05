@@ -173,3 +173,45 @@ CREATE TABLE IF NOT EXISTS connections (
 
 Users then connect via Settings → Connections → Google. Tokens are
 AES-256-GCM encrypted at rest; sends always require explicit user approval.
+
+## Cloud Mission Vault (files, folders, tags)
+
+The hosted vault stores files server-side so the same library follows the
+user across browser, desktop, and TV. Create the two tables on the shared
+Cloud SQL instance (same proxy session as above):
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -u sanjeevai -p sanjeevai -e "
+CREATE TABLE IF NOT EXISTS vault_folders (
+  id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  userId bigint unsigned NOT NULL,
+  name varchar(120) NOT NULL,
+  parentId bigint unsigned NULL,
+  createdAt timestamp NOT NULL DEFAULT now(),
+  INDEX (userId),
+  CONSTRAINT vault_folders_user FOREIGN KEY (userId) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS vault_files (
+  id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  userId bigint unsigned NOT NULL,
+  folderId bigint unsigned NULL,
+  name varchar(255) NOT NULL,
+  mimeType varchar(120) NOT NULL,
+  size int NOT NULL,
+  hash varchar(64) NOT NULL,
+  kind enum('image','doc') NOT NULL,
+  payload longtext,
+  extractedText longtext,
+  tags varchar(500) NOT NULL DEFAULT '',
+  createdAt timestamp NOT NULL DEFAULT now(),
+  updatedAt timestamp NOT NULL DEFAULT now(),
+  INDEX (userId),
+  INDEX (userId, hash),
+  CONSTRAINT vault_files_user FOREIGN KEY (userId) REFERENCES users(id)
+);"
+```
+
+Files are stored as base64 payloads (8 MB cap) with extracted text cached
+alongside — re-attaching a vaulted file costs zero re-upload and zero
+re-extraction. The API shape is storage-agnostic; move payloads to a GCS
+bucket later if the DB grows.

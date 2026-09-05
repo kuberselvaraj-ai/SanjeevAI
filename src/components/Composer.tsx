@@ -72,7 +72,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
-  const [voiceError, setVoiceError] = useState('')
+  const [, setVoiceError] = useState('')
   const recRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
 

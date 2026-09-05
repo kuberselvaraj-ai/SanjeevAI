@@ -133,9 +133,21 @@ export interface VaultFile {
   extractedText?: string
   /** auto-derived + user tags for filtering */
   tags: string[]
+  /** folder this file lives in (cloud vault; null = root) */
+  folderId?: number | null
+  /** cloud meta flags — payload/text exist server-side but aren't in the tree listing */
+  hasPayload?: boolean
+  hasText?: boolean
   /** chats that have used this file */
   usedIn: { conversationId: string; title: string; at: number }[]
   createdAt: number
+}
+
+/** A folder in the cloud vault. */
+export interface VaultFolder {
+  id: number
+  name: string
+  parentId: number | null
 }
 
 export type VideoStatus = 'queued' | 'processing' | 'success' | 'failed'
