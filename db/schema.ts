@@ -23,6 +23,12 @@ export const users = mysqlTable("users", {
   passwordHash: varchar("passwordHash", { length: 255 }),
   // Subscription tier — limits live in contracts/constants.ts (PLANS). Admins bypass limits.
   plan: mysqlEnum("plan", ["free", "pro"]).default("free").notNull(),
+  // Stripe billing linkage — set when the account came in through a paid checkout.
+  stripeCustomerId: varchar("stripeCustomerId", { length: 64 }),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 64 }),
+  // Purchased tier at checkout (solo | executive | concierge) — plan stays free|pro internally.
+  subscriptionTier: varchar("subscriptionTier", { length: 32 }),
+  subscriptionStatus: varchar("subscriptionStatus", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt")
     .defaultNow()
@@ -69,6 +75,31 @@ export const inviteCodes = mysqlTable("invite_codes", {
 
 export type InviteCode = typeof inviteCodes.$inferSelect;
 export type InsertInviteCode = typeof inviteCodes.$inferInsert;
+
+/**
+ * Paid signups — one row per completed Stripe Checkout session. The customer
+ * pays (activation + subscription), Stripe fires checkout.session.completed,
+ * and the row waits here until the buyer claims it by creating their account
+ * (signup link carries the session id as the claim token).
+ */
+export const paidSignups = mysqlTable("paid_signups", {
+  id: serial("id").primaryKey(),
+  /** Stripe Checkout session id (cs_…) — doubles as the unguessable claim token. */
+  sessionId: varchar("sessionId", { length: 128 }).notNull().unique(),
+  email: varchar("email", { length: 320 }).notNull(),
+  tier: varchar("tier", { length: 32 }).notNull(), // solo | executive | concierge
+  stripeCustomerId: varchar("stripeCustomerId", { length: 64 }),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 64 }),
+  /** Total collected on the first invoice, in cents. */
+  amountTotal: int("amountTotal"),
+  currency: varchar("currency", { length: 8 }),
+  userId: bigint("userId", { mode: "number", unsigned: true }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  claimedAt: timestamp("claimedAt"),
+});
+
+export type PaidSignup = typeof paidSignups.$inferSelect;
+export type InsertPaidSignup = typeof paidSignups.$inferInsert;
 
 /** Public read-only snapshots of a conversation, reachable at /share/<slug>. */
 export const shareLinks = mysqlTable("share_links", {

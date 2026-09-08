@@ -284,3 +284,64 @@ CREATE TABLE IF NOT EXISTS chat_digests (
   CONSTRAINT chat_digests_user_fk FOREIGN KEY (userId) REFERENCES users(id)
 );"
 ```
+
+## Billing (Stripe)
+
+The paid signup flow: `/#/pricing` → Stripe Checkout (subscription + one-time
+activation fee on the first invoice) → webhook plants a `paid_signups` row →
+the buyer lands on `/#/login?paid=cs_…` and creates their account on the pro
+plan. Subscription cancels/reactivations keep `users.plan` in sync.
+
+### One-time SQL migration
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -u sanjeevai -p sanjeevai -e "
+ALTER TABLE users
+  ADD COLUMN stripeCustomerId varchar(64) NULL,
+  ADD COLUMN stripeSubscriptionId varchar(64) NULL,
+  ADD COLUMN subscriptionTier varchar(32) NULL,
+  ADD COLUMN subscriptionStatus varchar(32) NULL;
+CREATE TABLE IF NOT EXISTS paid_signups (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  sessionId varchar(128) NOT NULL,
+  email varchar(320) NOT NULL,
+  tier varchar(32) NOT NULL,
+  stripeCustomerId varchar(64) NULL,
+  stripeSubscriptionId varchar(64) NULL,
+  amountTotal int NULL,
+  currency varchar(8) NULL,
+  userId bigint unsigned NULL,
+  createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  claimedAt timestamp NULL,
+  UNIQUE KEY paid_signups_session_unique (sessionId)
+);"
+```
+
+### Stripe dashboard setup (5 minutes)
+
+1. stripe.com → **Products** → create four:
+   - **Activation** — one-time, $199 → copy the `price_…` id
+   - **Solo** — recurring monthly, $49 → `price_…`
+   - **Executive** — recurring monthly, $99 → `price_…`
+   - **Concierge** — recurring monthly, $199 → `price_…`
+2. **Developers → API keys** → copy the **Secret key** (`sk_live_…`; use
+   `sk_test_…` while rehearsing the flow).
+3. **Developers → Webhooks → Add endpoint**:
+   `https://<your-domain>/api/billing/webhook`, events:
+   `checkout.session.completed`, `customer.subscription.updated`,
+   `customer.subscription.deleted` → copy the signing secret (`whsec_…`).
+
+### Cloud Run env vars
+
+```
+STRIPE_SECRET_KEY=sk_live_…
+STRIPE_WEBHOOK_SECRET=whsec_…
+STRIPE_PRICE_SOLO=price_…
+STRIPE_PRICE_EXECUTIVE=price_…
+STRIPE_PRICE_CONCIERGE=price_…
+STRIPE_PRICE_ACTIVATION=price_…
+APP_BASE_URL=https://<your-domain>
+```
+
+Without these vars the app runs exactly as before — `/#/pricing` shows a
+"book a demo" fallback instead of checkout.

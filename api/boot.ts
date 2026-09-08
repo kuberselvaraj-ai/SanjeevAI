@@ -9,6 +9,7 @@ import { createOAuthCallbackHandler } from "./kimi/auth";
 import { registerHostedRoutes } from "./hosted";
 import { registerConnectRoutes } from "./connect";
 import { registerVaultRoutes } from "./vault";
+import { registerBillingRoutes } from "./billing";
 import { Paths } from "@contracts/constants";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
@@ -27,6 +28,7 @@ app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 registerHostedRoutes(app);
 registerConnectRoutes(app);
 registerVaultRoutes(app);
+registerBillingRoutes(app);
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",

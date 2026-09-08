@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router'
 import Home from './pages/Home'
 import Login from "./pages/Login"
+import Pricing from "./pages/Pricing"
 import Admin from "./pages/Admin"
 import SharePage from "./pages/SharePage"
 import NotFound from "./pages/NotFound"
@@ -13,6 +14,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/admin" element={<Admin />} />
       <Route path="/share/:slug" element={<SharePage />} />
       <Route path="*" element={<NotFound />} />

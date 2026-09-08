@@ -17,7 +17,7 @@ import type { TrpcContext } from "./context";
  * machinery (JWT session, ctx.user lookup by unionId) works unchanged.
  */
 
-function hashPassword(password: string): string {
+export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
@@ -30,11 +30,11 @@ function verifyPassword(password: string, stored: string): boolean {
   return reference.length === candidate.length && timingSafeEqual(reference, candidate);
 }
 
-const localId = (email: string) => `local:${email.trim().toLowerCase()}`;
+export const localId = (email: string) => `local:${email.trim().toLowerCase()}`;
 
 /** Emails listed in ADMIN_EMAILS (comma-separated) get the admin role on
  *  signup/login — this is how the owner becomes admin without Kimi OAuth. */
-function isOwnerEmail(email: string): boolean {
+export function isOwnerEmail(email: string): boolean {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
@@ -42,7 +42,7 @@ function isOwnerEmail(email: string): boolean {
     .includes(email.trim().toLowerCase());
 }
 
-async function issueSession(ctx: TrpcContext, unionId: string) {
+export async function issueSession(ctx: TrpcContext, unionId: string) {
   const token = await signSessionToken({ unionId, clientId: env.appId });
   const opts = getSessionCookieOptions(ctx.req.headers);
   ctx.resHeaders.append(

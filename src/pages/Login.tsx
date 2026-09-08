@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/providers/trpc";
@@ -31,6 +31,22 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Paid-signup claim: Stripe returns buyers here as /#/login?paid=cs_…
+  const [searchParams] = useSearchParams();
+  const paidSession = searchParams.get("paid") ?? "";
+  const claim = trpc.billing.claimInfo.useQuery(
+    { sessionId: paidSession },
+    { enabled: Boolean(paidSession), retry: false },
+  );
+  const claimReady = Boolean(paidSession && claim.data);
+
+  useEffect(() => {
+    if (claim.data) {
+      setMode("signup");
+      setEmail(claim.data.email);
+    }
+  }, [claim.data]);
+
   const onSuccess = async () => {
     await utils.invalidate();
     navigate("/");
@@ -48,6 +64,11 @@ export default function Login() {
     onError,
     onSettled: () => setBusy(false),
   });
+  const paidSignupMutation = trpc.billing.paidSignup.useMutation({
+    onSuccess,
+    onError,
+    onSettled: () => setBusy(false),
+  });
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +77,12 @@ export default function Login() {
     setBusy(true);
     if (mode === "login") {
       loginMutation.mutate({ email, password });
+    } else if (claimReady) {
+      paidSignupMutation.mutate({
+        sessionId: paidSession,
+        password,
+        name: name.trim() || email.split("@")[0],
+      });
     } else {
       signupMutation.mutate({
         email,
@@ -76,6 +103,22 @@ export default function Login() {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          {paidSession && claim.isPending && (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">
+              Confirming your payment…
+            </p>
+          )}
+          {paidSession && claim.isError && (
+            <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+              {claim.error.message}
+            </p>
+          )}
+          {claimReady && (
+            <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-[13px]">
+              Payment confirmed — set a password to finish creating your
+              account{claim.data?.tier ? ` (${claim.data.tier} plan)` : ""}.
+            </p>
+          )}
           <form onSubmit={submit} className="space-y-3">
             {mode === "signup" && (
               <input
@@ -93,7 +136,8 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email"
               autoComplete="email"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+              readOnly={claimReady}
+              className={`w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-ring ${claimReady ? "opacity-60" : ""}`}
             />
             <input
               type="password"
@@ -107,7 +151,7 @@ export default function Login() {
               autoComplete={mode === "login" ? "current-password" : "new-password"}
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
             />
-            {mode === "signup" && (
+            {mode === "signup" && !claimReady && (
               <div>
                 <input
                   required
@@ -118,7 +162,11 @@ export default function Login() {
                   className="w-full rounded-lg border border-input bg-background px-3 py-2.5 font-mono-code text-sm uppercase tracking-wider outline-none focus:ring-1 focus:ring-ring"
                 />
                 <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-                  Signup is invite-only for now — ask the owner for a code.
+                  Signup is invite-only for now — ask the owner for a code, or{" "}
+                  <a href="#/pricing" className="text-primary hover:underline">
+                    see plans &amp; pricing
+                  </a>
+                  .
                 </p>
               </div>
             )}

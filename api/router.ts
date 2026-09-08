@@ -4,6 +4,7 @@ import { usageRouter } from "./usage-router";
 import { videoRouter } from "./video-router";
 import { adminRouter } from "./admin-router";
 import { inviteRouter } from "./invite-router";
+import { billingRouter } from "./billing-router";
 import { imageRouter } from "./image-router";
 import { codeRouter } from "./code-router";
 import { schedulesRouter } from "./schedules-router";
@@ -22,6 +23,7 @@ export const appRouter = createRouter({
   share: shareRouter,
   admin: adminRouter,
   invite: inviteRouter,
+  billing: billingRouter,
 });
 
 export type AppRouter = typeof appRouter;
