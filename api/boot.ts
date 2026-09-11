@@ -10,6 +10,7 @@ import { registerHostedRoutes } from "./hosted";
 import { registerConnectRoutes } from "./connect";
 import { registerVaultRoutes } from "./vault";
 import { registerBillingRoutes } from "./billing";
+import { registerDocumentRoutes } from "./documents";
 import { Paths } from "@contracts/constants";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
@@ -29,6 +30,7 @@ registerHostedRoutes(app);
 registerConnectRoutes(app);
 registerVaultRoutes(app);
 registerBillingRoutes(app);
+registerDocumentRoutes(app);
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",

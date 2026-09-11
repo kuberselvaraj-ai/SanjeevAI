@@ -30,6 +30,7 @@ import {
 } from '@/lib/vaultCloud'
 import { VaultDialog } from '@/components/VaultDialog'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
+import { requestDocument, DOC_FORMATS, type DocFormat } from '@/lib/documents'
 import { isDesktop } from '@/lib/desktop'
 import { AUTO_MODEL, DEFAULT_SYSTEM_PROMPT, isPremiumModel, toKimiModels } from '@/lib/models'
 import {
@@ -958,6 +959,125 @@ export default function Home() {
     [activeId, updateConversation],
   )
 
+  /** Document suite — brief (typed text or current context) → LLM-structured
+   *  PDF/Word/Excel/Slides → vault + downloadable artifact in the thread. */
+  const [docWorking, setDocWorking] = useState(false)
+  const createDocument = useCallback(
+    async (format: DocFormat, brief: string) => {
+      if (!hosted || !user || docWorking) return
+      setDocWorking(true)
+      // Ensure a thread exists to hold the exchange.
+      let convId = activeId
+      if (!convId || !conversations.some((c) => c.id === convId)) {
+        const conv: Conversation = {
+          id: uid(),
+          title: '',
+          model: settings.defaultModel,
+          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+        setConversations((prev) => [conv, ...prev])
+        convId = conv.id
+        setActiveId(conv.id)
+      }
+      const id = convId
+      const workingId = uid()
+      try {
+        const conv = conversations.find((c) => c.id === id)
+        const recent = (conv?.messages ?? [])
+          .filter((m) => !m.error && !m.streaming && m.content)
+          .slice(-6)
+          .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 1500)}`)
+          .join('\n\n')
+        const noun = DOC_FORMATS.find((f) => f.id === format)?.noun ?? 'document'
+        const effectiveBrief = brief.trim() || `A ${noun} summarizing: ${conv?.title || 'our current work'}`
+        const userMsg: ChatMessage | null = brief.trim()
+          ? { id: uid(), role: 'user', content: brief.trim(), createdAt: Date.now() }
+          : null
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  title: c.title || (brief.trim() ? brief.trim().slice(0, 60) : c.title),
+                  messages: [
+                    ...c.messages,
+                    ...(userMsg ? [userMsg] : []),
+                    {
+                      id: workingId,
+                      role: 'assistant',
+                      content: '',
+                      statusText: `Creating ${noun}…`,
+                      streaming: true,
+                      createdAt: Date.now(),
+                    } as ChatMessage,
+                  ],
+                  updatedAt: Date.now(),
+                }
+              : c,
+          ),
+        )
+        const result = await requestDocument(format, effectiveBrief, recent)
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === workingId
+                      ? {
+                          ...m,
+                          streaming: false,
+                          statusText: undefined,
+                          content: `Created **${result.title}** — saved to your vault, downloadable below.`,
+                          model: 'kimi-k3',
+                          attachments: result.file
+                            ? [
+                                {
+                                  id: result.file.id,
+                                  name: result.file.name,
+                                  mimeType: result.file.mimeType,
+                                  size: result.file.size,
+                                  kind: 'doc' as const,
+                                  status: 'ready' as const,
+                                  url: `/api/vault/files/${result.file.id}/payload?download=1`,
+                                },
+                              ]
+                            : [],
+                        }
+                      : m,
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : c,
+          ),
+        )
+        refreshVault()
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Document generation failed'
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === workingId
+                      ? { ...m, streaming: false, statusText: undefined, error: message }
+                      : m,
+                  ),
+                }
+              : c,
+          ),
+        )
+      } finally {
+        setDocWorking(false)
+      }
+    },
+    [hosted, user, docWorking, activeId, conversations, settings.defaultModel, refreshVault],
+  )
+
   const send = useCallback(
     async (text: string, files: File[] = [], opts?: { freshThread?: boolean }) => {
       if (desktop && !settings.moonshotKey) {
@@ -1620,6 +1740,8 @@ export default function Home() {
               onRemovePendingVault={(id) =>
                 setPendingVault((prev) => prev.filter((v) => v.id !== id))
               }
+              onCreateDocument={hosted ? createDocument : undefined}
+              docWorking={docWorking}
               voiceMode={voiceMode}
               speaking={speaking}
               onToggleVoiceMode={toggleVoiceMode}

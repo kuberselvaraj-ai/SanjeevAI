@@ -8,6 +8,8 @@ export interface Attachment {
   kind: 'image' | 'doc'
   /** base64 data URL (images — sent inline to the vision model) */
   dataUrl?: string
+  /** direct download URL (generated documents living in the vault) */
+  url?: string
   /** text extracted via the Kimi Files API (documents) */
   extractedText?: string
   status: 'ready' | 'error'

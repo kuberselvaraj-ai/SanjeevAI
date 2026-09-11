@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ClipboardEvent } from 'react'
 import { ArrowUp, Square, ChevronDown, Cpu, Paperclip, X, FileText, Loader2, Globe, FolderGit2, Telescope, Mic, Archive, AudioLines } from 'lucide-react'
 import { AUTO_ENTRY, KIMI_MODELS, PREMIUM_CHAT_MODELS, modelLabel, type KimiModel } from '@/lib/models'
 import { ACCEPTED_FILE_TYPES, formatSize, isImageMime } from '@/lib/files'
+import { DOC_FORMATS, detectDocIntent, type DocFormat } from '@/lib/documents'
 import type { VaultFile } from '@/lib/types'
 import { VoiceModeBar } from './VoiceModeBar'
 
@@ -34,6 +35,8 @@ export function Composer({
   speaking = false,
   onToggleVoiceMode,
   onVoiceBargeIn,
+  onCreateDocument,
+  docWorking = false,
 }: {
   model: string
   onModelChange: (m: string) => void
@@ -63,11 +66,18 @@ export function Composer({
   speaking?: boolean
   onToggleVoiceMode?: () => void
   onVoiceBargeIn?: () => void
+  /** Document suite — generate a PDF/Word/Excel/Slides deliverable from the
+   *  typed brief (or current conversation context when empty). Hosted only. */
+  onCreateDocument?: (format: DocFormat, brief: string) => void
+  /** true while a document is being generated */
+  docWorking?: boolean
 }) {
   const customList = customModels ?? []
   const [text, setText] = useState('')
   const [files, setFiles] = useState<PendingFile[]>([])
   const [modelOpen, setModelOpen] = useState(false)
+  const [docMenuOpen, setDocMenuOpen] = useState(false)
+  const docIntent = onCreateDocument ? detectDocIntent(text) : null
   const [moreModelsOpen, setMoreModelsOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -329,6 +339,27 @@ export function Composer({
                 </button>
               )}
 
+              {/* Document intent hint — "make a spreadsheet of…" offers the
+                  one-click action instead of making the user hunt a menu. */}
+              {docIntent && !streaming && (
+                <button
+                  onClick={() => {
+                    const brief = text.trim()
+                    setText('')
+                    onCreateDocument?.(docIntent, brief)
+                  }}
+                  disabled={disabled || docWorking}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-40"
+                  title="Generate this as a document instead of a chat reply"
+                >
+                  <FileText size={14} />
+                  <span className="hidden sm:inline">
+                    Make a {DOC_FORMATS.find((f) => f.id === docIntent)?.noun}
+                  </span>
+                  <span className="sm:hidden">Doc</span>
+                </button>
+              )}
+
               {/* Web search toggle */}
               <button
                 onClick={onToggleWebSearch}
@@ -393,6 +424,56 @@ export function Composer({
                 >
                   <X size={13} />
                 </button>
+              )}
+
+              {/* Document suite picker — explicit create-as menu */}
+              {onCreateDocument && (
+                <div className="relative">
+                  <button
+                    onClick={() => setDocMenuOpen((v) => !v)}
+                    disabled={disabled || docWorking}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
+                      docWorking
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                    title="Create a document from your brief (PDF, Word, Excel, Slides) — saved to your vault"
+                  >
+                    {docWorking ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+                    <span className="hidden sm:inline">Create</span>
+                    <ChevronDown size={12} />
+                  </button>
+                  {docMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setDocMenuOpen(false)} />
+                      <div className="absolute bottom-full left-0 z-40 mb-2 w-44 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+                        {DOC_FORMATS.map((f) => (
+                          <button
+                            key={f.id}
+                            onClick={() => {
+                              setDocMenuOpen(false)
+                              const brief = text.trim()
+                              if (brief) setText('')
+                              onCreateDocument(f.id, brief)
+                            }}
+                            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] transition-colors hover:bg-accent"
+                          >
+                            <FileText size={14} className="text-primary" />
+                            <span>
+                              <span className="block font-medium">{f.label}</span>
+                              <span className="block text-[11px] text-muted-foreground">
+                                {f.id === 'pdf' && 'Polished report'}
+                                {f.id === 'docx' && 'Editable document'}
+                                {f.id === 'xlsx' && 'Tables & numbers'}
+                                {f.id === 'pptx' && 'Presentation deck'}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
 
               {/* Model switcher */}

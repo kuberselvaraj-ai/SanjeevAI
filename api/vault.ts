@@ -171,6 +171,18 @@ export function registerVaultRoutes(app: Hono<{ Bindings: HttpBindings }>) {
       .limit(1);
     const r = rows[0];
     if (!r) return c.json({ error: "Not found" }, 404);
+    // ?download=1 streams the raw bytes (used by chat artifact links); the
+    // default JSON shape stays for in-app consumers.
+    if (c.req.query("download") === "1") {
+      if (!r.payload) return c.json({ error: "No payload stored for this file" }, 404);
+      return new Response(Buffer.from(r.payload, "base64"), {
+        headers: {
+          "content-type": r.mimeType,
+          "content-disposition": `attachment; filename="${encodeURIComponent(r.name)}"`,
+          "content-length": String(r.size),
+        },
+      });
+    }
     return c.json({
       id: String(r.id),
       name: r.name,

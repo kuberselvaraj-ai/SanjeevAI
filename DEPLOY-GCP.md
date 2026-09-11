@@ -345,3 +345,14 @@ APP_BASE_URL=https://<your-domain>
 
 Without these vars the app runs exactly as before — `/#/pricing` shows a
 "book a demo" fallback instead of checkout.
+
+## Document suite (PDF / Word / Excel / Slides)
+
+`POST /api/hosted/documents` turns a brief into a real deliverable: Kimi K3
+structures the content, pure-JS renderers (pdfkit / docx / exceljs /
+pptxgenjs) build the bytes, and the file lands in the user's cloud vault
+(downloadable from the chat thread, synced to every device). No new env vars
+or migrations — it rides the vault tables and `MOONSHOT_API_KEY`. Usage is
+metered against the plan's monthly token cap (`note = doc:<format>` in
+usage_events). The composer's "Create" menu exposes it explicitly, and
+document-intent prompts ("make a spreadsheet of…") surface a one-click chip.

@@ -42,14 +42,20 @@ function AttachmentChip({ attachment }: { attachment: Attachment }) {
       />
     )
   }
-  return (
+  const chip = (
     <div
       className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 ${
         attachment.status === 'error'
           ? 'border-destructive/50 bg-destructive/10'
           : 'border-border bg-background/60'
-      }`}
-      title={attachment.status === 'error' ? attachment.error : attachment.name}
+      } ${attachment.url ? 'cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/5' : ''}`}
+      title={
+        attachment.status === 'error'
+          ? attachment.error
+          : attachment.url
+            ? `${attachment.name} — click to download`
+            : attachment.name
+      }
     >
       <FileText
         size={16}
@@ -58,10 +64,21 @@ function AttachmentChip({ attachment }: { attachment: Attachment }) {
       <span className="max-w-[160px]">
         <span className="block truncate text-xs font-medium">{attachment.name}</span>
         <span className="block text-[10px] text-muted-foreground">
-          {attachment.status === 'error' ? 'Failed to read' : formatSize(attachment.size)}
+          {attachment.status === 'error'
+            ? 'Failed to read'
+            : attachment.url
+              ? `${formatSize(attachment.size)} · Download`
+              : formatSize(attachment.size)}
         </span>
       </span>
     </div>
+  )
+  return attachment.url ? (
+    <a href={attachment.url} download={attachment.name} className="no-underline">
+      {chip}
+    </a>
+  ) : (
+    chip
   )
 }
 
@@ -585,6 +602,13 @@ export const MessageItem = memo(function MessageItem({
           </div>
         ) : (
           <div className={message.streaming && !message.content ? 'stream-cursor' : ''}>
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {message.attachments.map((a) => (
+                  <AttachmentChip key={a.id} attachment={a} />
+                ))}
+              </div>
+            )}
             {message.content ? (
               <div ref={contentRef} className={message.streaming ? 'stream-cursor' : ''}>
                 <Markdown
