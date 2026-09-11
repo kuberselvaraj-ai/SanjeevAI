@@ -30,7 +30,7 @@ import {
 } from '@/lib/vaultCloud'
 import { VaultDialog } from '@/components/VaultDialog'
 import { hostedStreamChat, processFileHosted } from '@/lib/hosted'
-import { requestDocument, DOC_FORMATS, type DocFormat } from '@/lib/documents'
+import { requestDocument, DOC_FORMATS, detectDocIntent, type DocFormat } from '@/lib/documents'
 import { isDesktop } from '@/lib/desktop'
 import { AUTO_MODEL, DEFAULT_SYSTEM_PROMPT, isPremiumModel, toKimiModels } from '@/lib/models'
 import {
@@ -1466,6 +1466,22 @@ export default function Home() {
 
   // ----- share link (hosted only — needs the server DB) -----
   const shareMutation = trpc.share.create.useMutation()
+  /** Auto-select: a clear document request ("make a spreadsheet of…") goes
+   *  straight to the document suite — no menu, no chip click. Chat otherwise. */
+  const sendOrAutoDocument = useCallback(
+    (text: string, files: File[] = []) => {
+      if (hosted && user && files.length === 0) {
+        const format = detectDocIntent(text)
+        if (format) {
+          createDocument(format, text)
+          return
+        }
+      }
+      send(text, files)
+    },
+    [hosted, user, createDocument, send],
+  )
+
   const shareChat = useCallback(async () => {
     if (!active || active.messages.length === 0) return
     const messages = active.messages
@@ -1712,7 +1728,7 @@ export default function Home() {
                 ...settings.customModels,
               ]).filter((m, i, all) => all.findIndex((x) => x.id === m.id) === i)}
               onModelChange={setActiveModel}
-              onSend={send}
+              onSend={sendOrAutoDocument}
               onStop={stop}
               streaming={streaming}
               disabled={noKey}
